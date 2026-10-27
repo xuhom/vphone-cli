@@ -33,7 +33,14 @@ void cfx_track_vcam_session(id session) {
   pthread_mutex_unlock(&cfx_vcam_sessions_lock);
   if (!added) return;
   cfxlog(@"[video delivery] tracking session %p", session);
-  dispatch_async(dispatch_get_main_queue(), ^{ cfx_preview_start_timer(); });
+  // On iOS 27 the graph may never report _setRunning:YES. The preview
+  // layer is often initialized before its session has inputs, so its init
+  // hooks cannot adopt it yet. A confirmed vcam session must start discovery
+  // even when only isRunning polling reaches this fallback.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    cfx_preview_start_timer();
+    cfx_start_scan_timer();
+  });
 }
 
 // MARK: - per-connection frame shape

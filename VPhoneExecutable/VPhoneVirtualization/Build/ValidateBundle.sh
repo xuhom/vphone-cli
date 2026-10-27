@@ -54,6 +54,9 @@ for name in Ghostty terminfo; do
     }
 done
 require_signed_macho "$location_helper"
+require_signed_macho "$macos/vphone-remote-bridge"
+require_signed_macho "$bundle/Contents/Helpers/VPhoneRemoteAudio.app/Contents/MacOS/vphone-remote-audio"
+/usr/bin/codesign --verify --deep --strict "$bundle/Contents/Helpers/VPhoneRemoteAudio.app"
 /usr/bin/codesign --verify --strict "$location_app"
 # One requirement for every build, so locationd keeps one grant for all of
 # them (see StageBundle.sh).
@@ -74,18 +77,19 @@ for language in en zh-Hans ja ko vi; do
         exit 1
     }
 done
-# The host microphone is opened by vphone-vm itself, so macOS prompts for this
-# bundle and refuses the microphone to one with no usage description.
-/usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$bundle/Contents/Info.plist" >/dev/null 2>&1 || {
-    print -u2 "VPhone.bundle has no microphone usage description"
-    exit 1
-}
-for language in en zh-Hans ja ko vi; do
-    strings="$resources/$language.lproj/InfoPlist.strings"
-    /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$strings" >/dev/null 2>&1 || {
-        print -u2 "Missing microphone prompt text in VPhone.bundle: $language"
+# Host capture is opened by vphone-vm itself; both resources require prompt text.
+for key in NSMicrophoneUsageDescription NSCameraUsageDescription NSAudioCaptureUsageDescription; do
+    /usr/libexec/PlistBuddy -c "Print :$key" "$bundle/Contents/Info.plist" >/dev/null 2>&1 || {
+        print -u2 "VPhone.bundle has no $key"
         exit 1
     }
+    for language in en zh-Hans ja ko vi; do
+        strings="$resources/$language.lproj/InfoPlist.strings"
+        /usr/libexec/PlistBuddy -c "Print :$key" "$strings" >/dev/null 2>&1 || {
+            print -u2 "Missing $key in VPhone.bundle: $language"
+            exit 1
+        }
+    done
 done
 # The patch API ships its interface so an out-of-tree patch set can build against
 # the same framework the bundle loads.
@@ -240,6 +244,9 @@ while IFS= read -r file; do
             ;;
         "$location_helper")
             [[ "$platform" != IOS ]] || { print -u2 "iOS binary in VPhoneLocation.app"; exit 1; }
+            ;;
+        "$bundle/Contents/Helpers/VPhoneRemoteAudio.app/Contents/MacOS/vphone-remote-audio")
+            [[ "$platform" != IOS ]] || { print -u2 "iOS binary in VPhoneRemoteAudio.app"; exit 1; }
             ;;
         "$frameworks/"*)
             [[ "$platform" != IOS ]] || { print -u2 "iOS binary in Contents/Frameworks: ${file#$bundle/}"; exit 1; }

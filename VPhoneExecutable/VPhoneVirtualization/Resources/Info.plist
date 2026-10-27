@@ -9,9 +9,13 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleVersion</key>
-	<string>53</string>
+	<string>65</string>
 	<key>CFBundleShortVersionString</key>
 	<string>2.13.5</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Streams audio from this virtual iPhone to an authorized device on the local network.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Shares this Mac's built-in camera with the virtual iPhone for both front and back camera capture.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Shares this Mac's microphone with the virtual iPhone so apps running inside it can record.</string>
 </dict>

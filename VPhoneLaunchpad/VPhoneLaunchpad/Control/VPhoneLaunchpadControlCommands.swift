@@ -682,6 +682,7 @@ struct VPhoneLaunchpadControlCommands {
                 block: block,
                 allow: allow,
                 declared: Set(catalog.patches.map(\.identifier)),
+                selectable: catalog.selectablePatchIdentifiers,
                 inPreset: Set(catalog.patches.filter(\.inPreset).map(\.identifier)),
                 guest: Set(catalog.patches.filter { !$0.isBootChain }.map(\.identifier)),
             )

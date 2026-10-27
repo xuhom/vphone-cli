@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import Virtualization
@@ -23,6 +24,7 @@ final class VPhoneCameraServer {
     enum SourceKind: String {
         case off
         case testPattern
+        case builtInCamera
         case videoFile // .mov / .mp4 / .m4v via AVAssetReader
     }
 
@@ -40,8 +42,11 @@ final class VPhoneCameraServer {
     private var connectionFD: Int32 = -1
     private var producer: VPhoneFrameProducer?
     private var timer: DispatchSourceTimer?
+    private var streamingRequested = false
     private var connectionAttemptToken: UInt64 = 0
     private var framePending = false
+    private var sourceSelectionToken: UInt64 = 0
+    var isStreaming: Bool { timer != nil }
 
     private let producerQueue = DispatchQueue(
         label: "com.vphone.camera.producer",
@@ -49,6 +54,24 @@ final class VPhoneCameraServer {
     )
 
     var onConnectionStateChange: ((Bool) -> Void)?
+    var onSourceStateChange: (() -> Void)?
+    var onError: ((String) -> Void)?
+
+    /// A later source choice invalidates an outstanding system permission prompt.
+    func selectBuiltInCamera() {
+        guard sourceKind != .builtInCamera else { return }
+        sourceSelectionToken &+= 1
+        let token = sourceSelectionToken
+        Task { [weak self] in
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            guard let self, sourceSelectionToken == token else { return }
+            guard granted else {
+                onError?("Allow Camera access for VPhone Launchpad in System Settings → Privacy & Security → Camera, then select the source again.")
+                return
+            }
+            setSource(.builtInCamera)
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -73,6 +96,7 @@ final class VPhoneCameraServer {
     // MARK: - Source selection
 
     func setSource(_ kind: SourceKind, videoURL: URL? = nil) {
+        sourceSelectionToken &+= 1
         if sourceKind == kind, kind != .videoFile {
             return
         }
@@ -82,6 +106,21 @@ final class VPhoneCameraServer {
         }
         sourceKind = kind
         switch kind {
+        case .builtInCamera:
+            let token = sourceSelectionToken
+            do {
+                producer = try VPhoneBuiltInCameraProducer { [weak self] message in
+                    Task { @MainActor [weak self] in
+                        guard let self, sourceSelectionToken == token, isStreaming else { return }
+                        stopStreaming()
+                        onError?(message)
+                    }
+                }
+            } catch {
+                producer = nil
+                sourceKind = .off
+                onError?(error.localizedDescription)
+            }
         case .off:
             producer = nil
         case .testPattern:
@@ -112,15 +151,19 @@ final class VPhoneCameraServer {
         if wasStreaming, producer != nil {
             startStreaming()
         }
+        onSourceStateChange?()
     }
 
     // MARK: - Streaming
 
     func startStreaming() {
-        guard producer != nil, isConnected else { return }
+        guard producer != nil else { return }
+        streamingRequested = true
+        guard isConnected else { return }
         if timer != nil {
             return
         }
+        producer?.start()
         let interval = 1.0 / Self.defaultFPS
         // Timer fires on the main queue so MainActor-isolated state
         // (producer, connectionFD) can be read directly without tripping
@@ -163,13 +206,16 @@ final class VPhoneCameraServer {
         }
         timer = t
         t.resume()
+        onSourceStateChange?()
         print("[camera] streaming started — source=\(sourceKind.rawValue)")
     }
 
     func stopStreaming() {
-        guard let t = timer else { return }
-        t.cancel()
+        streamingRequested = false
+        timer?.cancel()
         timer = nil
+        producer?.stop()
+        onSourceStateChange?()
         print("[camera] streaming stopped")
     }
 
@@ -207,7 +253,7 @@ final class VPhoneCameraServer {
                     self.isConnected = true
                     print("[camera] connected on vsock port \(Self.vsockPort)")
                     self.onConnectionStateChange?(true)
-                    if self.sourceKind != .off {
+                    if self.streamingRequested {
                         self.startStreaming()
                     }
                 case let .failure(error):

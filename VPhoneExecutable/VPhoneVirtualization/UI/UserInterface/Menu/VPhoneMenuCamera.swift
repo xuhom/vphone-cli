@@ -25,6 +25,10 @@ extension VPhoneMenuController {
         cameraSourceOffItem = off
         menu.addItem(off)
 
+        let builtIn = makeItem("Source: Mac Built-in Camera", action: #selector(setCameraSourceBuiltIn))
+        cameraSourceBuiltInItem = builtIn
+        menu.addItem(builtIn)
+
         let testPattern = makeItem(
             "Source: Test Pattern",
             action: #selector(setCameraSourceTestPattern),
@@ -58,12 +62,26 @@ extension VPhoneMenuController {
         cameraStatusItem?.title = VPhoneLocalization.text(
             connected ? "Camera server: connected" : "Camera server: disconnected",
         )
-        cameraStartStopItem?.isEnabled = connected && (cameraServer?.sourceKind ?? .off) != .off
+        updateCameraSourceState()
+    }
+
+    func updateCameraSourceState() {
+        refreshCameraSourceCheckmarks()
+        let streaming = cameraServer?.isStreaming == true
+        cameraStartStopItem?.title = VPhoneLocalization.text(streaming ? "Stop Streaming" : "Start Streaming")
+        cameraStartStopItem?.image = menuSymbol(streaming ? "stop" : "play")
+        cameraStartStopItem?.isEnabled = streaming ||
+            (cameraServer?.isConnected == true && cameraServer?.sourceKind != .off)
+    }
+
+    @objc func setCameraSourceBuiltIn() {
+        cameraServer?.selectBuiltInCamera()
     }
 
     private func refreshCameraSourceCheckmarks() {
         let kind = cameraServer?.sourceKind ?? .off
         cameraSourceOffItem?.state = (kind == .off) ? .on : .off
+        cameraSourceBuiltInItem?.state = (kind == .builtInCamera) ? .on : .off
         cameraSourceTestPatternItem?.state =
             (kind == .testPattern) ? .on : .off
         cameraSourceVideoFileItem?.state =
@@ -112,14 +130,10 @@ extension VPhoneMenuController {
 
     @objc func toggleCameraStreaming() {
         guard let server = cameraServer else { return }
-        if cameraStartStopItem?.title == VPhoneLocalization.text("Start Streaming") {
+        if !server.isStreaming {
             server.startStreaming()
-            cameraStartStopItem?.title = VPhoneLocalization.text("Stop Streaming")
-            cameraStartStopItem?.image = menuSymbol("stop")
         } else {
             server.stopStreaming()
-            cameraStartStopItem?.title = VPhoneLocalization.text("Start Streaming")
-            cameraStartStopItem?.image = menuSymbol("play")
         }
     }
 }

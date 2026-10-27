@@ -36,21 +36,23 @@ extension VPhoneMenuController {
         // system back gesture. The key equivalent is here so the menu can show
         // it; VPhoneApplication intercepts Esc before the menu is consulted,
         // because AppKit's matching for a bare Esc missed presses.
-        menu.addItem(makeItem(
+        let back = makeItem(
             "Back",
             action: #selector(sendBack),
             keyEquivalent: "\u{1b}",
             modifiers: [],
             symbol: "arrow.uturn.backward",
-        ))
+        )
+        menu.addItem(back)
         // Shown only for an Apple Watch guest; see `showsWatchControls`.
         let sideButton = makeItem("Side Button", action: #selector(sendWatchSideButton), symbol: "button.vertical.right.press")
         sideButton.isHidden = true
         watchSideButtonItem = sideButton
         menu.addItem(sideButton)
-        menu.addItem(makeItem("Power", action: #selector(sendPower), symbol: "power"))
-        menu.addItem(makeItem("Volume Up", action: #selector(sendVolumeUp), symbol: "speaker.plus"))
-        menu.addItem(makeItem("Volume Down", action: #selector(sendVolumeDown), symbol: "speaker.minus"))
+        let power = makeItem("Power", action: #selector(sendPower), symbol: "power")
+        let volumeUp = makeItem("Volume Up", action: #selector(sendVolumeUp), symbol: "speaker.plus")
+        let volumeDown = makeItem("Volume Down", action: #selector(sendVolumeDown), symbol: "speaker.minus")
+        for button in [power, volumeUp, volumeDown] { menu.addItem(button) }
         menu.addItem(NSMenuItem.separator())
         let rotateLeft = makeItem(
             "Rotate Left",
@@ -73,6 +75,7 @@ extension VPhoneMenuController {
             menu.addItem(rotate)
         }
         rotateMenuItems = [rotateLeft, rotateRight, orientationItem]
+        titlebarDeviceItems = [volumeDown, volumeUp, rotateRight, power, back]
         control.observeInterfaceOrientation { [weak self] orientation in
             self?.updateOrientationChecks(orientation)
         }

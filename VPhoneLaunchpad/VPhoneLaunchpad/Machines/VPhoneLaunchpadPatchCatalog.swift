@@ -12,6 +12,8 @@ nonisolated struct VPhoneLaunchpadPatchCatalog: Decodable, Sendable {
         let identifier: String
         let title: String
         let summary: String
+        /// Set identifiers carried by this preset. Older bundle reports may omit them.
+        let patchSets: [String]?
 
         var id: String {
             identifier
@@ -46,6 +48,8 @@ nonisolated struct VPhoneLaunchpadPatchCatalog: Decodable, Sendable {
         /// The OS versions the patch is declared for, or `any`.
         let applicability: String
         let bootEssential: Bool
+        /// False when the active preset omits the patch's declaring set.
+        let selectable: Bool?
         /// Whether the preset the report was made against turns it on. What the
         /// checkmarks are a difference from.
         let inPreset: Bool
@@ -153,6 +157,15 @@ nonisolated struct VPhoneLaunchpadPatchCatalog: Decodable, Sendable {
         blockedPatches.count + allowedPatches.count
     }
 
+    var selectablePatchIdentifiers: Set<String> {
+        let presetSets = presets.first { $0.identifier == activePreset }?.patchSets
+        guard let presetSets, !presetSets.isEmpty else {
+            return Set(patches.map(\.identifier))
+        }
+        let selected = Set(presetSets)
+        return Set(patches.filter { selected.contains($0.patchSet) && $0.selectable != false }.map(\.identifier))
+    }
+
     /// The machine's own choice, as the editor starts from it.
     var selection: VPhoneLaunchpadPatchSelection {
         VPhoneLaunchpadPatchSelection(
@@ -185,7 +198,8 @@ nonisolated struct VPhoneLaunchpadPatchCatalog: Decodable, Sendable {
     /// naming a patch this catalog does not list counts as boot chain, as the
     /// template key counts it.
     func guestOverrides(_ selection: VPhoneLaunchpadPatchSelection) -> Set<String> {
-        let guest = Set(patches.filter { !$0.isBootChain }.map(\.identifier))
+        let selectable = selectablePatchIdentifiers
+        let guest = Set(patches.filter { !$0.isBootChain && selectable.contains($0.identifier) }.map(\.identifier))
         return selection.blocked.union(selection.allowed).intersection(guest)
     }
 
@@ -200,11 +214,12 @@ nonisolated struct VPhoneLaunchpadPatchCatalog: Decodable, Sendable {
     /// The patches matching `filter`, in the order the bundle applies them, which
     /// already runs one set after another.
     func patches(matching filter: String) -> [Patch] {
+        let available = patches.filter { selectablePatchIdentifiers.contains($0.identifier) }
         let needle = filter.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else {
-            return patches
+            return available
         }
-        return patches.filter { Self.matches($0, needle) }
+        return available.filter { Self.matches($0, needle) }
     }
 
     private static func matches(_ patch: Patch, _ needle: String) -> Bool {
@@ -361,14 +376,15 @@ nonisolated struct VPhoneLaunchpadPatchSelection: Hashable, Sendable {
     /// otherwise show a checkmark that stores nothing.
     mutating func normalize(against catalog: VPhoneLaunchpadPatchCatalog) {
         let inPreset = Set(catalog.patches.filter(\.inPreset).map(\.identifier))
-        let declared = Set(catalog.patches.map(\.identifier))
+        let selectable = catalog.selectablePatchIdentifiers
         blocked = blocked.intersection(inPreset)
-        allowed = allowed.intersection(declared).subtracting(inPreset)
+        allowed = allowed.intersection(selectable).subtracting(inPreset)
     }
 
     /// The boot-essential patches this choice turns off, in catalogue order.
     func bootEssentialOff(in catalog: VPhoneLaunchpadPatchCatalog) -> [VPhoneLaunchpadPatchCatalog.Patch] {
-        catalog.patches.filter { $0.bootEssential && !isOn($0) }
+        let selectable = catalog.selectablePatchIdentifiers
+        return catalog.patches.filter { selectable.contains($0.identifier) && $0.bootEssential && !isOn($0) }
     }
 }
 

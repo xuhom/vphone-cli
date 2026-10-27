@@ -608,6 +608,13 @@ struct VPhoneFirmwareSetPatchesCommand: ParsableCommand {
                 "No patch declares \(unknown.joined(separator: ", ")). Run `fw patches` for the identifiers.",
             )
         }
+        let unavailable = Set(block + allow)
+            .subtracting(VPhonePatchCatalogReport.selectablePatches(in: resolved)).sorted()
+        guard unavailable.isEmpty else {
+            throw ValidationError(
+                "Preset \(resolved.identifier) does not include the patch set for \(unavailable.joined(separator: ", ")). Choose a preset that includes that set.",
+            )
+        }
         let contradictory = Set(block).intersection(allow).sorted()
         guard contradictory.isEmpty else {
             throw ValidationError(

@@ -1,6 +1,41 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "NSCameraUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shares this Mac's built-in camera with the virtual iPhone for both front and back camera capture."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 Mac 内置摄像头共享给虚拟 iPhone，供前置和后置摄像头共同使用。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac の内蔵カメラを仮想 iPhone と共有し、前面と背面の両方のカメラで使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 내장 카메라를 가상 iPhone과 공유하여 전면 및 후면 카메라에 함께 사용합니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chia sẻ camera tích hợp của Mac với iPhone ảo cho cả camera trước và sau."
+          }
+        }
+      }
+    },
     "CFBundleDisplayName" : {
       "comment" : "Bundle display name",
       "localizations" : {

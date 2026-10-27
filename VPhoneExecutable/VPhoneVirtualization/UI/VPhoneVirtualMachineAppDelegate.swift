@@ -21,6 +21,9 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
     private var hostAutomationServer: VPhoneHostAutomationServer?
     private var cameraServer: VPhoneCameraServer?
     private var apiProxy: VPhoneAPIProxy?
+    private var apiEndpoint: (url: URL, token: String)?
+    private var remoteOwnsAPI = false
+    private var lanRemoteBridge: VPhoneLANRemoteBridge?
     private var portForwarder: VPhonePortForwarder?
     private var sigintSource: DispatchSourceSignal?
     private var didAttemptAutoInstall = false
@@ -152,9 +155,13 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
                     let proxy = try VPhoneAPIProxy(device: device, listen: listen, hostScreen: hostScreen)
                     let (url, token) = try await proxy.start()
                     apiProxy = proxy
+                    apiEndpoint = (url, token)
                     print("[api] HTTP/WebSocket API: \(url.absoluteString)")
                     print("[api] token: \(token)")
                     print("[api] send it as: Authorization: Bearer \(token)")
+                    // LAN bridges discover this endpoint through Launchpad's
+                    // output pipe. Do not wait for the stdio buffer to fill.
+                    fflush(nil)
                 }
             } else if command.apiListen != nil {
                 throw VPhoneVirtualMachineError.apiSocketUnavailable
@@ -170,6 +177,9 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
                 screenWidth: options.screenWidth,
                 screenHeight: options.screenHeight,
                 screenScale: options.screenScale,
+                isPhoneGuest: !options.isPadGuest && !options.isTVGuest && !options.isWatchGuest,
+                isPadGuest: options.isPadGuest,
+                isDuoGuest: options.isDuoGuest,
                 hardwareKeyboardEnabled: vm.usesHardwareKeyboard,
                 keySender: keySender,
                 control: control,
@@ -235,6 +245,15 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             let mc = VPhoneMenuController(keySender: keySender, control: control)
+            mc.onRemoteToggle = { [weak self] in
+                guard let self else { return false }
+                return try await self.toggleLANRemote()
+            }
+            mc.onRemotePairingCopy = { [weak self] in
+                guard let self else { return "" }
+                return try self.lanRemoteBridge?.pairingJSON() ?? ""
+            }
+            wc.connectDeviceButtons(to: mc)
             mc.guestPanelsWindowController.displayWindow = wc.displayWindow
             mc.vm = vm
             mc.onHardwareKeyboardChange = { [weak self] enabled in
@@ -417,6 +436,14 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
         )
         server.virtualMachine = vm
         hostAutomationServer = server
+        if command.noGraphics && !command.dfu && command.apiListen == nil {
+            do {
+                _ = try await toggleLANRemote()
+                print("[remote] LAN Remote enabled for \(command.config.deletingLastPathComponent().lastPathComponent)")
+            } catch {
+                print("[remote] Unable to start LAN Remote: \(error)")
+            }
+        }
     }
 
     /// The guest shows the VM's name, the folder holding config.plist, as its
@@ -516,10 +543,74 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
         homePodDisplayTask?.cancel()
         homePodDisplayTask = nil
         windowController?.clearHomePodDisplay()
+        lanRemoteBridge?.stop()
+        lanRemoteBridge = nil
+        apiEndpoint = nil
+        remoteOwnsAPI = false
         hostAutomationServer?.stop()
         portForwarder?.stop()
         apiProxy?.stop()
         control?.stop()
+    }
+
+    @MainActor
+    private func toggleLANRemote() async throws -> Bool {
+        if lanRemoteBridge?.isRunning == true {
+            lanRemoteBridge?.stop()
+            lanRemoteBridge = nil
+            if remoteOwnsAPI {
+                apiProxy?.stop()
+                apiProxy = nil
+                apiEndpoint = nil
+                remoteOwnsAPI = false
+            }
+            return false
+        }
+        guard let vm,
+              let device = vm.virtualMachine.socketDevices.first as? VZVirtioSocketDevice
+        else { throw VPhoneVirtualMachineError.apiSocketUnavailable }
+        if apiEndpoint == nil {
+            let options = try command.resolveOptions()
+            let hostScreen = VPhoneHostScreenService(
+                scale: options.screenScale,
+                display: { [weak vm] in vm?.virtualMachine.graphicsDevices.first?.displays.first },
+                interfaceDegrees: { [weak control] in
+                    guard let control, control.isConnected,
+                          let result = try? await control.call("display.orientation")
+                    else { return nil }
+                    return (result["degrees"] as? NSNumber)?.intValue
+                },
+            )
+            let proxy = try VPhoneAPIProxy(device: device, listen: "127.0.0.1:0", hostScreen: hostScreen)
+            let (url, token) = try await proxy.start()
+            apiProxy = proxy
+            apiEndpoint = (url, token)
+            remoteOwnsAPI = true
+        }
+        guard let endpoint = apiEndpoint else { throw VPhoneVirtualMachineError.apiSocketUnavailable }
+        let directory = command.config.deletingLastPathComponent()
+        do {
+            let bridge = try VPhoneLANRemoteBridge(machineDirectory: directory)
+            bridge.onStop = { [weak self] in
+                self?.menuController?.setLANRemoteEnabled(false)
+            }
+            try await bridge.start(
+                machine: VPhoneDockName.name(forConfig: command.config),
+                directory: directory,
+                upstream: endpoint.url,
+                token: endpoint.token,
+            )
+            lanRemoteBridge = bridge
+            return true
+        } catch {
+            if remoteOwnsAPI {
+                apiProxy?.stop()
+                apiProxy = nil
+                apiEndpoint = nil
+                remoteOwnsAPI = false
+            }
+            throw error
+        }
     }
 
     /// Virtualization copies the keyboard configuration when creating the VM.

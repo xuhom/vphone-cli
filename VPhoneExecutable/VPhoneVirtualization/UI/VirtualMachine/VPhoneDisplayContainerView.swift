@@ -12,6 +12,20 @@ import VPhoneCoreKit
 /// conversion undoes the rotation.
 final class VPhoneDisplayContainerView: NSView {
     let displayView: NSView
+    var isPhoneGuest = false {
+        didSet { needsLayout = true }
+    }
+    var isPadGuest = false {
+        didSet { needsLayout = true }
+    }
+    var isDuoGuest = false {
+        didSet { needsLayout = true }
+    }
+    var hasRoundedScreen: Bool { isPhoneGuest || isPadGuest }
+    private let phoneOverlay = CAShapeLayer()
+    private let screenMask = CAShapeLayer()
+    /// Approximately 3 mm in AppKit points, independent of the guest's scale.
+    var titlebarGap: CGFloat { hasRoundedScreen ? 3 * 72 / 25.4 : 0 }
     /// The guest panel's size in points, portrait.
     var panelSize: NSSize = .zero {
         didSet { needsLayout = true }
@@ -43,6 +57,11 @@ final class VPhoneDisplayContainerView: NSView {
         layer?.backgroundColor = NSColor.black.cgColor
         displayView.autoresizingMask = []
         addSubview(displayView)
+        // A layer adds no hit-test target: guest input keeps its existing mapping.
+        displayView.wantsLayer = true
+        phoneOverlay.fillColor = NSColor.black.cgColor
+        phoneOverlay.zPosition = 1
+        displayView.layer?.addSublayer(phoneOverlay)
     }
 
     @available(*, unavailable)
@@ -126,17 +145,103 @@ final class VPhoneDisplayContainerView: NSView {
 
     override func layout() {
         super.layout()
+        var screenBounds = bounds
+        screenBounds.size.height = max(0, screenBounds.height - titlebarGap)
+        if isFlipped { screenBounds.origin.y += titlebarGap }
         let size = panelSize.width > 0
-            ? VPhoneDisplayOrientation.fittedSize(panel: panelSize, angle: angle, in: bounds.size)
-            : bounds.size
+            ? VPhoneDisplayOrientation.fittedSize(panel: panelSize, angle: angle, in: screenBounds.size)
+            : screenBounds.size
         // Sized unturned, then turned about its center.
         displayView.frameCenterRotation = 0
         displayView.frame = NSRect(
-            x: bounds.midX - size.width / 2,
-            y: bounds.midY - size.height / 2,
+            x: screenBounds.midX - size.width / 2,
+            y: screenBounds.midY - size.height / 2,
             width: size.width,
             height: size.height,
         )
         displayView.frameCenterRotation = angle
+        updatePhoneOverlay()
+    }
+
+    /// Draw in the unturned panel's coordinates so the hardware silhouette
+    /// follows the display through resizing, full screen and orientation changes.
+    private func updatePhoneOverlay() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        phoneOverlay.isHidden = !isPhoneGuest || isDuoGuest
+        updateScreenMask()
+        guard isPhoneGuest, !isDuoGuest else { return }
+        let rect = displayView.bounds
+        guard rect.width > 0, rect.height > 0 else { return }
+        phoneOverlay.frame = rect
+        let local = CGRect(origin: .zero, size: rect.size)
+        let path = CGMutablePath()
+        // Proportions of the reference iPhone screen; scale with the panel,
+        // rather than with the Mac's backing scale or titlebar height.
+        let width = local.width * 0.214
+        let height = local.width * 0.08
+        let inset = local.width * 0.034
+        let island = CGRect(
+            x: (local.width - width) / 2,
+            y: displayView.isFlipped ? inset : local.height - inset - height,
+            width: width,
+            height: height,
+        )
+        path.addRoundedRect(in: island, cornerWidth: height / 2, cornerHeight: height / 2)
+        phoneOverlay.path = path
+    }
+
+    /// Clip the entire panel, including its hosted VM sublayers, in the
+    /// container's coordinates. Converting the unturned rounded path keeps all
+    /// four physical corners aligned during rotation and window resizing.
+    /// A clear window behind it makes the removed corners transparent.
+    private func updateScreenMask() {
+        layer?.backgroundColor = (hasRoundedScreen ? NSColor.clear : NSColor.black).cgColor
+        guard hasRoundedScreen else {
+            layer?.mask = nil
+            return
+        }
+        let rect = displayView.bounds
+        guard rect.width > 0, rect.height > 0 else {
+            layer?.mask = nil
+            return
+        }
+        // iPad panels have much tighter physical corners than iPhone panels.
+        // Use a proportional approximation so the outline scales with the VM.
+        let radius = min(rect.width, rect.height) * (isPadGuest ? 0.035 : 0.12)
+        let origin = displayView.convert(rect.origin, to: self)
+        let xAxis = displayView.convert(NSPoint(x: rect.minX + 1, y: rect.minY), to: self)
+        let yAxis = displayView.convert(NSPoint(x: rect.minX, y: rect.minY + 1), to: self)
+        var transform = CGAffineTransform(
+            a: xAxis.x - origin.x, b: xAxis.y - origin.y,
+            c: yAxis.x - origin.x, d: yAxis.y - origin.y,
+            tx: origin.x, ty: origin.y,
+        )
+        let panel: CGPath
+        if isDuoGuest {
+            // The outer panel meets the hinge on its physical left edge.
+            // Build the silhouette in panel coordinates so the straight edge
+            // follows that edge when the guest rotates.
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + radius),
+                              control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - radius))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - radius, y: rect.maxY),
+                              control: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
+            panel = path
+        } else {
+            panel = CGPath(
+                roundedRect: CGRect(origin: .zero, size: rect.size),
+                cornerWidth: radius, cornerHeight: radius, transform: nil,
+            )
+        }
+        screenMask.frame = bounds
+        screenMask.path = panel.copy(using: &transform)
+        layer?.mask = screenMask
     }
 }

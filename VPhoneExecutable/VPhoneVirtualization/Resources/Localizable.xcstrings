@@ -1,6 +1,76 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Source: Mac Built-in Camera" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source: Mac Built-in Camera"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来源：Mac 内置摄像头"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ソース：Mac 内蔵カメラ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "소스: Mac 내장 카메라"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nguồn: Camera tích hợp của Mac"
+          }
+        }
+      }
+    },
+    "Camera Error" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera Error"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "摄像头错误"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カメラエラー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "카메라 오류"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lỗi camera"
+          }
+        }
+      }
+    },
     "%lld of %lld defaults · %lld unsaved changes" : {
       "localizations": {
         "en": {
@@ -11836,6 +11906,26 @@
             "value" : "主屏幕"
           }
         }
+      }
+    },
+    "Fold iPhone Duo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Fold iPhone Duo" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "iPhone Duoを折りたたむ" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "iPhone Duo 접기" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Gập iPhone Duo" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "折叠 iPhone Duo" } }
+      }
+    },
+    "Unfold iPhone Duo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unfold iPhone Duo" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "iPhone Duoを開く" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "iPhone Duo 펼치기" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Mở iPhone Duo" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "展开 iPhone Duo" } }
       }
     },
     "Home Button" : {

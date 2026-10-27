@@ -228,6 +228,7 @@
       }
     },
     "%@ keep working: they share its blocks but do not need it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -364,6 +365,7 @@
       }
     },
     "A missing template is built in %@, set up once without a window, and saved under Templates." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -772,6 +774,7 @@
       }
     },
     "Building template: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1452,6 +1455,7 @@
       }
     },
     "Edit…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1724,6 +1728,7 @@
       }
     },
     "Guest System" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2234,6 +2239,7 @@
       }
     },
     "No machine was created from it." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4444,6 +4450,7 @@
       }
     },
     "iPadOS" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6003,6 +6010,7 @@
       }
     },
     "Catalog" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6304,6 +6312,7 @@
       }
     },
     "Choose Location…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6746,6 +6755,7 @@
       }
     },
     "Console" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -7268,6 +7278,7 @@
       }
     },
     "Creating: %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8876,6 +8887,7 @@
       }
     },
     "Include the restore IPSW directory" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -13262,6 +13274,7 @@
       }
     },
     "Source" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -14352,6 +14365,7 @@
       }
     },
     "This build does not contain VPhone.bundle. Choose another build." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -17599,21 +17613,73 @@
       }
     },
     "Creates a .vpea archive for each machine in the folder you choose." : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Creates a .vpea archive for each machine in the folder you choose." } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "選択したフォルダに、マシンごとの .vpea アーカイブを作成します。" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : "선택한 폴더에 머신마다 .vpea 아카이브를 만듭니다." } },
-        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Tạo một bản lưu trữ .vpea cho mỗi máy trong thư mục bạn chọn." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "在你选择的文件夹中为每台虚拟机创建一个 .vpea 归档。" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creates a .vpea archive for each machine in the folder you choose."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したフォルダに、マシンごとの .vpea アーカイブを作成します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택한 폴더에 머신마다 .vpea 아카이브를 만듭니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tạo một bản lưu trữ .vpea cho mỗi máy trong thư mục bạn chọn."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在你选择的文件夹中为每台虚拟机创建一个 .vpea 归档。"
+          }
+        }
       }
     },
     "Creates a .vpea archive." : {
+      "extractionState" : "stale",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Creates a .vpea archive." } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : ".vpea アーカイブを作成します。" } },
-        "ko" : { "stringUnit" : { "state" : "translated", "value" : ".vpea 아카이브를 만듭니다." } },
-        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Tạo một bản lưu trữ .vpea." } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "创建一个 .vpea 归档。" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Creates a .vpea archive."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ".vpea アーカイブを作成します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ".vpea 아카이브를 만듭니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tạo một bản lưu trữ .vpea."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建一个 .vpea 归档。"
+          }
+        }
       }
     },
     "Delete %lld IPSWs?" : {

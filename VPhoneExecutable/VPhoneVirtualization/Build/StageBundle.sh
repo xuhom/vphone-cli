@@ -14,6 +14,8 @@ frameworks="$bundle/Contents/Frameworks"
 # lives in guest-resources and never runs on the Mac.
 guest="$resources/guest-resources"
 location_app="$bundle/Contents/Helpers/VPhoneLocation.app"
+remote_app="$bundle/Contents/Helpers/VPhoneRemoteAudio.app"
+remote_artifacts="$root/VPhoneExecutable/VPhoneVirtualization/RemoteBridgeArtifacts"
 
 # Xcode exports the bundle target's SDK and package paths to build phases. Nested
 # xcodebuild must resolve each project's own graph, especially the iOS daemon.
@@ -72,6 +74,11 @@ fi
 # this the window traps the moment a session is opened.
 /bin/cp -R "$TARGET_BUILD_DIR/GhosttyKit_GhosttyTerminal.bundle" \
     "$resources/GhosttyKit_GhosttyTerminal.bundle"
+/bin/cp "$remote_artifacts/vphone-remote-bridge" "$macos/vphone-remote-bridge"
+# Dart's AOT executable carries a valid linker signature. Re-signing changes
+# its page hashes and makes macOS reject the executable at launch.
+/bin/rm -rf "$remote_app"
+/bin/cp -R "$remote_artifacts/VPhoneRemoteAudio.app" "$remote_app"
 /bin/cp "$command_products/vphone-cli" "$macos/vphone-cli"
 /bin/cp "$amfi_products/vphone-escalator" "$macos/vphone-escalator"
 /bin/cp "$daemon_products/vphoned" "$guest/vphoned"

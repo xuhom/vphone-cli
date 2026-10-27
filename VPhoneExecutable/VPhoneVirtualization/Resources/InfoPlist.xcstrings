@@ -1,6 +1,51 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "NSAudioCaptureUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Streams audio from this virtual iPhone to an authorized device on the local network." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "将这台虚拟 iPhone 的音频传输到局域网中已授权的设备。" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "この仮想 iPhone の音声を、ローカルネットワーク上の承認済みデバイスに送信します。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 가상 iPhone의 오디오를 로컬 네트워크의 승인된 기기로 전송합니다." } },
+        "vi": { "stringUnit": { "state": "translated", "value": "Truyền âm thanh từ iPhone ảo này đến thiết bị đã được cho phép trên mạng cục bộ." } }
+      }
+    },
+    "NSCameraUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shares this Mac's built-in camera with the virtual iPhone for both front and back camera capture."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将 Mac 内置摄像头共享给虚拟 iPhone，供前置和后置摄像头共同使用。"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac の内蔵カメラを仮想 iPhone と共有し、前面と背面の両方のカメラで使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mac 내장 카메라를 가상 iPhone과 공유하여 전면 및 후면 카메라에 함께 사용합니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chia sẻ camera tích hợp của Mac với iPhone ảo cho cả camera trước và sau."
+          }
+        }
+      }
+    },
     "NSLocationUsageDescription": {
       "localizations": {
         "en": {

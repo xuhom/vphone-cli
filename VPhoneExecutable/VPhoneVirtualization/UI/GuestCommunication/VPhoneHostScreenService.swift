@@ -266,6 +266,7 @@ private final class HostScreenSocket: ChannelInboundHandler, @unchecked Sendable
                 "height": result.height,
                 "sourceWidth": result.sourceWidth,
                 "sourceHeight": result.sourceHeight,
+                "turn": turn,
                 "scale": service.scale,
                 "captureUs": captureMicroseconds,
                 "encodeUs": result.encodeMicroseconds,

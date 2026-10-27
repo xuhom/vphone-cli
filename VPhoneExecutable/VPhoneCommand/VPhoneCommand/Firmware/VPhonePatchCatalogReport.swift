@@ -117,6 +117,8 @@ public struct VPhonePatchCatalogReport: Sendable {
         let target: String
         let applicability: String
         let bootEssential: Bool
+        /// The active preset includes the set that declares this patch.
+        let selectable: Bool
         /// Whether the preset turns it on, before any version gate.
         let inPreset: Bool
         /// Whether this VM's own choice leaves it on.
@@ -126,7 +128,7 @@ public struct VPhonePatchCatalogReport: Sendable {
 
         private enum CodingKeys: String, CodingKey {
             case identifier, title, summary, patchSet, patchSetName, target, applicability
-            case bootEssential, inPreset, enabled
+            case bootEssential, selectable, inPreset, enabled
             case part, wanted, planned, applied, pending, delivery
         }
 
@@ -143,6 +145,7 @@ public struct VPhonePatchCatalogReport: Sendable {
             try container.encode(target, forKey: .target)
             try container.encode(applicability, forKey: .applicability)
             try container.encode(bootEssential, forKey: .bootEssential)
+            try container.encode(selectable, forKey: .selectable)
             try container.encode(inPreset, forKey: .inPreset)
             try container.encode(enabled, forKey: .enabled)
             guard let state else { return }
@@ -213,6 +216,15 @@ public struct VPhonePatchCatalogReport: Sendable {
         return result
     }
 
+    /// Overrides can select only patches declared by a set in this preset.
+    /// The restore-image set is deliberately absent from `standard`.
+    public static func selectablePatches(in preset: VPhonePatchPreset) -> Set<String> {
+        let presetSets = Set(preset.patchSets.map(\.identifier))
+        return Set(FirmwarePatchSetCatalog.bundled
+            .filter { presetSets.contains($0.identifier) }
+            .flatMap { $0.patches.map(\.identifier) })
+    }
+
     /// The patches this VM's choice leaves on, before any version gate.
     public func selectedPatches() -> Set<String> {
         let presetSets = Set(activePreset.patchSets.map(\.identifier))
@@ -243,6 +255,7 @@ public struct VPhonePatchCatalogReport: Sendable {
     /// being filtered.
     func entries() -> [PatchEntry] {
         let included = Self.patchesInPreset(activePreset)
+        let selectable = Self.selectablePatches(in: activePreset)
         let selected = selectedPatches()
         let states = Dictionary(
             (states() ?? []).map { ($0.identifier, $0) },
@@ -260,6 +273,7 @@ public struct VPhonePatchCatalogReport: Sendable {
                     target: patch.target.description,
                     applicability: patch.applicability.description,
                     bootEssential: patch.bootEssential,
+                    selectable: selectable.contains(patch.identifier),
                     inPreset: included.contains(patch.identifier),
                     enabled: selected.contains(patch.identifier),
                     state: states[patch.identifier],

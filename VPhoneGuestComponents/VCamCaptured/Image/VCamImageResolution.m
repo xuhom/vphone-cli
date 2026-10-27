@@ -4,6 +4,7 @@
 #include <ptrauth.h>
 
 #include "VCamImage.h"
+#include "VCamSourceScan.h"
 
 // MARK: - runtime image resolution
 
@@ -120,32 +121,9 @@ static uintptr_t vcc_bl_target(uintptr_t bl_pc, uint32_t bl) {
 // to NOP so every source survives the per-client ownership + prewarming-
 // enabled filter and reaches the response serializer.
 uintptr_t vcc_find_per_source_filter(const vcc_image_t *img) {
-  if (!img->text || img->text_words < 6) return 0;
-  for (size_t i = 0; i + 5 < img->text_words; i++) {
-    if (img->text[i]     != 0xAA0003F9u) continue;          // mov x25, x0
-    // ldr x2, [sp, #?] — any sp-relative 64-bit load into x2. The stack
-    // offset is a compiler-chosen frame slot and shifts between builds.
-    if ((img->text[i + 1] & 0xFFC003FFu) != 0xF94003E2u) continue;
-    if (img->text[i + 2] != 0xAA1603E0u) continue;          // mov x0, x22
-    if ((img->text[i + 3] & 0xFC000000u) != 0x94000000u)    // BL (don't care)
-      continue;
-    if ((img->text[i + 4] & 0xFF00001Fu) != 0x34000000u)    // cbz w0, ?
-      continue;
-    if ((img->text[i + 5] & 0xFF00001Fu) != 0x34000019u)    // cbz w25, ?
-      continue;
-    // Verify both cbz branch to the same target (same SKIP block).
-    // CBZ encoding: bits 23..5 = imm19 (19-bit signed instruction offset).
-    // Byte offset = sign_extend(imm19) * 4.
-    int32_t imm0 = (int32_t)((img->text[i + 4] >> 5) & 0x7FFFFu);
-    int32_t imm1 = (int32_t)((img->text[i + 5] >> 5) & 0x7FFFFu);
-    if (imm0 & 0x40000) imm0 |= 0xFFF80000;
-    if (imm1 & 0x40000) imm1 |= 0xFFF80000;
-    uintptr_t tgt0 = (uintptr_t)&img->text[i + 4] + (intptr_t)imm0 * 4;
-    uintptr_t tgt1 = (uintptr_t)&img->text[i + 5] + (intptr_t)imm1 * 4;
-    if (tgt0 != tgt1) continue;
-    return (uintptr_t)&img->text[i + 4];
-  }
-  return 0;
+  const vcc_source_text_t text = {
+      img->text, (uintptr_t)img->text, img->text_words};
+  return vcc_source_ownership_filter(&text);
 }
 
 // Scan __text for the daemon's client-allowlist filter sequence:
@@ -158,47 +136,15 @@ uintptr_t vcc_find_per_source_filter(const vcc_image_t *img) {
 //   bl  <objc_msgSend$containsObject:>                ; (don't care)
 //   cbz w0,  ...                                      ; (insn & 0xFF00001F) == 0x34000000
 //
+// x22 above is illustrative: the scanner follows any callee-saved client
+// register and requires both rejection branches to share their destination.
 // On a hit, writes the absolute (slid) target of the 1st and 4th BL into
 // `*si_fn_out` and `*prewarm_fn_out`. Returns the PC of the first BL.
 uintptr_t vcc_find_filter_chain(const vcc_image_t *img,
                                 uintptr_t *si_fn_out,
                                 uintptr_t *prewarm_fn_out) {
-  if (!img->text || img->text_words < 8) return 0;
-  *si_fn_out = 0;
-  *prewarm_fn_out = 0;
-
-  for (size_t i = 0; i + 7 < img->text_words; i++) {
-    uint32_t bl1 = img->text[i];
-    if ((bl1 & 0xFC000000u) != 0x94000000u) continue;       // BL
-
-    uint32_t bl2 = img->text[i + 1];
-    if ((bl2 & 0xFC000000u) != 0x94000000u) continue;       // BL
-
-    uint32_t mov_x22 = img->text[i + 2];
-    if (mov_x22 != 0xAA0003F6u) continue;                   // mov x22, x0
-
-    uint32_t bl3 = img->text[i + 3];
-    if ((bl3 & 0xFC000000u) != 0x94000000u) continue;       // BL
-
-    uint32_t cbz_x22 = img->text[i + 4];
-    if ((cbz_x22 & 0xFF00001Fu) != 0xB4000016u) continue;   // cbz x22, ...
-
-    uint32_t mov_x2 = img->text[i + 5];
-    if (mov_x2 != 0xAA1603E2u) continue;                    // mov x2, x22
-
-    uint32_t bl4 = img->text[i + 6];
-    if ((bl4 & 0xFC000000u) != 0x94000000u) continue;       // BL
-
-    uint32_t cbz_w0 = img->text[i + 7];
-    if ((cbz_w0 & 0xFF00001Fu) != 0x34000000u) continue;    // cbz w0, ...
-
-    uintptr_t bl1_pc = (uintptr_t)&img->text[i];
-    uintptr_t bl3_pc = (uintptr_t)&img->text[i + 3];
-    *si_fn_out      = vcc_bl_target(bl1_pc, bl1);
-    *prewarm_fn_out = vcc_bl_target(bl3_pc, bl3);
-    return bl1_pc;
-  }
-  return 0;
+  const vcc_source_text_t text = {img->text, (uintptr_t)img->text, img->text_words};
+  return vcc_source_prewarm_chain(&text, si_fn_out, prewarm_fn_out);
 }
 
 static int vcc_addr_in_data(const vcc_image_t *img, uintptr_t addr) {

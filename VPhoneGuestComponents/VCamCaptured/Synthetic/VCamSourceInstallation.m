@@ -4,6 +4,7 @@
 
 #include "VCamImage.h"
 #include "VCamSynthetic.h"
+#include "VCamSourceScan.h"
 
 // MARK: - synthetic source creation
 
@@ -12,7 +13,9 @@
 //    audit_token_t *token, int unused_x3, FigCaptureSource **outSource)
 typedef int (*VCC_CreateFn)(CFAllocatorRef, id, void *, int, void **);
 
-static void *vcc_create_synthetic_source(VCC_CreateFn create_fn, id backing) {
+typedef int (*VCC_CreateVideoFn)(CFAllocatorRef, id, void *, int, id, id, id, void **);
+
+static void *vcc_create_synthetic_source(void *create_fn, BOOL videoABI, id backing) {
   audit_token_t self_token;
   mach_msg_type_number_t count = TASK_AUDIT_TOKEN_COUNT;
   kern_return_t kr = task_info(mach_task_self(), TASK_AUDIT_TOKEN,
@@ -23,7 +26,11 @@ static void *vcc_create_synthetic_source(VCC_CreateFn create_fn, id backing) {
   }
 
   void *outSource = NULL;
-  int ret = create_fn(kCFAllocatorDefault, backing, &self_token, 0, &outSource);
+  int ret = videoABI
+      ? ((VCC_CreateVideoFn)create_fn)(kCFAllocatorDefault, backing, &self_token,
+                                     0, nil, nil, nil, &outSource)
+      : ((VCC_CreateFn)create_fn)(kCFAllocatorDefault, backing, &self_token,
+                                0, &outSource);
   vcc_log(@"  CreateFromBacking ret=0x%x outSource=%p", (unsigned)ret,
           outSource);
   return outSource;
@@ -126,7 +133,14 @@ void vcc_install_synthetic(void) {
     vcc_log(@"  per-source filter not located — daemon will skip our source");
   }
 
+  // Prefer an export when available; 27.0.1 strips this function from exports.
+  // The structural fallback follows the saved client register instead.
+  void *prewarm_export = dlsym(RTLD_DEFAULT,
+      "FigCaptureGetSupportedPrewarmingBundleIdentifiers");
+  if (prewarm_export) prewarm_fn_addr = (uintptr_t)ptrauth_strip(
+      prewarm_export, ptrauth_key_function_pointer);
   if (prewarm_fn_addr) {
+
     typedef CFTypeRef (*PrewarmFn)(void);
     PrewarmFn pf = (PrewarmFn)ptrauth_sign_unauthenticated(
         (void *)prewarm_fn_addr, ptrauth_key_function_pointer, 0);
@@ -180,12 +194,8 @@ void vcc_install_synthetic(void) {
   //     → BL CFArrayCreateMutable inside the block body
   //     → adrp+str x0, [Xn, #imm]  ← stores into _sSourceList
   //
-  // Every link is a structural ARM64 pattern, so the chain is stable
-  // across iOS revisions. The static-init function naming convention
-  // (`<class>_initializeStatics_block_invoke`) has been used by Apple
-  // since the iOS 14 era and persists through 26.x.
-  uintptr_t fnCFArrayCreate = (uintptr_t)dlsym(RTLD_DEFAULT,
-                                                "CFArrayCreateMutable");
+  // Private symbols may be stripped. The fallback handles both an outlined
+  // dispatch_once helper and the inline wrapper shipped in iOS 27.0.1.
   // The on-device nlist exports static text symbols with leading
   // underscores. Block-invoke names take one extra underscore vs the
   // outer C symbol — try the canonical first, plus a triple-_ variant
@@ -204,97 +214,26 @@ void vcc_install_synthetic(void) {
       break;
     }
   }
-  // If the symbol is stripped on-device (typical for the DSC), walk
-  // the structural chain rooted at FigCaptureSourceServerStart to
-  // find the dispatch_once block-invoke. The chain is:
-  //
-  //   FigCaptureSourceServerStart  (exported, addr known)
-  //     `cmn x?, #0x1 ; b.ne <wrapper>`     (onceToken check)
-  //   wrapper                       (`.cold.1`, static; addr from b.ne)
-  //     `bl <cold.1>`               (we land here from b.ne; target IS cold.1)
-  //   cold.1                        (5–6 instructions, static)
-  //     `adrp x0,...; add x0, x0, ...`  (onceToken pointer)
-  //     `adrp x1,...; add x1, x1, ...`  (block-constant pointer)
-  //     `bl <dispatch_once stub>`
-  //   block constant                (struct __Block_literal in __DATA_CONST)
-  //     +0x10 = invoke pointer (PAC-signed; raw bytes are the function
-  //                             address before signature stripping)
   if (!blockInvoke) {
-    uintptr_t fnFigStart = (uintptr_t)dlsym(RTLD_DEFAULT,
-                                            "FigCaptureSourceServerStart");
-    if (fnFigStart) {
-      fnFigStart = (uintptr_t)ptrauth_strip((void *)fnFigStart,
-                                             ptrauth_key_function_pointer);
-      uint32_t *ip = (uint32_t *)fnFigStart;
-      uintptr_t coldWrapper = 0;
-      // Step 1: find `cmn x?, #0x1; b.ne <target>` and decode target.
-      // CMN (immediate) 64-bit, no shift:
-      //   1011 0001 00ii iiii iiii iinn nnn1 1111
-      // mask 0xFFC0001F, match 0xB100001F.
-      // B.NE: 0101 0100 iiii iiii iiii iiii iii0 0001
-      //   mask 0xFF00001F, match 0x54000001.
-      for (unsigned i = 0; i < 256 && !coldWrapper; i++) {
-        uint32_t cmn = ip[i];
-        if ((cmn & 0xFFC0001Fu) != 0xB100001Fu) continue;
-        // imm12 in bits[21:10]
-        uint32_t imm = (cmn >> 10) & 0xFFFu;
-        if (imm != 1) continue;
-        if (i + 1 >= 256) continue;
-        uint32_t bne = ip[i + 1];
-        if ((bne & 0xFF00001Fu) != 0x54000001u) continue;
-        int32_t imm19 = (int32_t)((bne & 0x00FFFFE0u) << 8) >> 11;
-        coldWrapper = (uintptr_t)&ip[i + 1] + (intptr_t)imm19;
+    void *start = dlsym(RTLD_DEFAULT, "FigCaptureSourceServerStart");
+    const vcc_source_text_t text = {
+        img.text, (uintptr_t)img.text, img.text_words};
+    uintptr_t block = start ? vcc_source_init_block(&text,
+        (uintptr_t)ptrauth_strip(start, ptrauth_key_function_pointer)) : 0;
+    // Validate the complete block literal lies in this image's data before
+    // dereferencing its invoke pointer. No fallback to an arbitrary global.
+    for (unsigned i = 0; block && i < img.data_range_count; i++) {
+      if (block < img.data_ranges[i].start ||
+          block > img.data_ranges[i].end - 32) continue;
+      uintptr_t invoke = (uintptr_t)ptrauth_strip(
+          *(void **)(block + 16), ptrauth_key_function_pointer);
+      if (invoke >= (uintptr_t)img.text &&
+          invoke < (uintptr_t)(img.text + img.text_words) && !(invoke & 3)) {
+        blockInvoke = invoke;
+        vcc_log(@"  init block-invoke (dispatch_once block %p) @ %p",
+                (void *)block, (void *)invoke);
       }
-      if (!coldWrapper) {
-        vcc_log(@"  cmn+b.ne onceToken-check pattern not found in "
-                @"FigCaptureSourceServerStart");
-      } else {
-        vcc_log(@"  cold-wrapper site @ 0x%lx", (unsigned long)coldWrapper);
-        // Step 2: cold wrapper starts with `bl <cold.1>`. Decode.
-        uint32_t bl = *(uint32_t *)coldWrapper;
-        uintptr_t cold1 = 0;
-        if ((bl & 0xFC000000u) == 0x94000000u) {
-          int32_t imm26 = (int32_t)((bl & 0x03FFFFFFu) << 6) >> 4;
-          cold1 = coldWrapper + (intptr_t)imm26;
-          vcc_log(@"  cold.1 @ 0x%lx", (unsigned long)cold1);
-        }
-        // Step 3: walk cold.1 looking for the LAST `adrp x1,...; add x1,
-        // x1, #imm` pair BEFORE the dispatch_once `bl`. That's the block
-        // constant. cold.1 is typically only 5–6 instructions long.
-        if (cold1) {
-          uint32_t *cip = (uint32_t *)cold1;
-          uintptr_t blockConst = 0;
-          for (unsigned i = 0; i < 16; i++) {
-            uint32_t add = cip[i];
-            if ((add & 0xFF800000u) != 0x91000000u) continue;
-            if ((add & 0x1Fu) != 1) continue;        // ADD x1, ...
-            if (((add >> 5) & 0x1Fu) != 1) continue;
-            uint32_t add_imm = (add >> 10) & 0xFFFu;
-            // Walk back for matching adrp x1
-            for (unsigned k = 1; k <= 4 && k <= i; k++) {
-              uint32_t adrp = cip[i - k];
-              if ((adrp & 0x9F000000u) != 0x90000000u) continue;
-              if ((adrp & 0x1Fu) != 1) continue;
-              uintptr_t adrp_pc = (uintptr_t)&cip[i - k];
-              blockConst = vcc_adrp_target(adrp_pc, adrp) + add_imm;
-              break;
-            }
-            if (blockConst) break;
-          }
-          if (!blockConst) {
-            vcc_log(@"  block-constant adrp+add not found in cold.1");
-          } else {
-            vcc_log(@"  block constant @ 0x%lx", (unsigned long)blockConst);
-            // Step 4: read invoke pointer at offset 0x10 within the
-            // block constant. PAC-strip and assign as block-invoke.
-            uintptr_t rawInvoke = *(uintptr_t *)(blockConst + 0x10);
-            blockInvoke = (uintptr_t)ptrauth_strip(
-                (void *)rawInvoke, ptrauth_key_function_pointer);
-            vcc_log(@"  init block-invoke (via cold.1 chain) @ 0x%lx",
-                    (unsigned long)blockInvoke);
-          }
-        }
-      }
+      break;
     }
   }
   uintptr_t sSourceListAddr = 0;
@@ -321,6 +260,15 @@ void vcc_install_synthetic(void) {
       sSourceListAddr = symLookup;
     } else {
       for (unsigned i = 0; i < ng; i++) {
+        BOOL inData = NO;
+        for (unsigned j = 0; j < img.data_range_count; j++) {
+          if (globals[i] >= img.data_ranges[j].start &&
+              globals[i] <= img.data_ranges[j].end - sizeof(uintptr_t)) {
+            inData = YES;
+            break;
+          }
+        }
+        if (!inData) continue;
         if (vcc_slot_value_is_cfarray(globals[i])) {
           uintptr_t val = 0;
           if (globals[i]) val = *(uintptr_t *)globals[i];
@@ -331,9 +279,7 @@ void vcc_install_synthetic(void) {
         }
       }
       if (!sSourceListAddr) {
-        vcc_log(@"  no init-store global slot held a CFArray; falling "
-                @"back to first init-store");
-        if (ng > 0) sSourceListAddr = globals[0];
+        vcc_log(@"  no init-store global slot held a CFArray; registration skipped");
       }
     }
   } else {
@@ -356,18 +302,24 @@ void vcc_install_synthetic(void) {
   vcc_log(@"  _sSourceList slot @ %p (list=%p)", sSourceListSlot,
           *sSourceListSlot);
 
-  // Resolve FigCaptureSourceCreateFromBacking. Marked `external` in
-  // CMCapture's symtab — should be in the dyld exports trie.
+  // Resolve the legacy export first, then the split video-source API.
   void *create_p = vcc_dlsym_fn("FigCaptureSourceCreateFromBacking");
+  BOOL videoABI = NO;
   if (!create_p) {
-    vcc_log(@"  abort: FigCaptureSourceCreateFromBacking not dlsym-resolvable");
+    create_p = vcc_dlsym_fn("FigVideoCaptureSourceCreateFromBacking");
+    videoABI = YES;
+  }
+  if (!create_p) {
+    vcc_log(@"  abort: no supported source creation export");
     return;
   }
-  VCC_CreateFn create_fn = (VCC_CreateFn)create_p;
+  // iOS 27 splits audio/video creation. Its caller passes optional backing
+  // configuration objects in x4/x5, client context in x6, and output in x7.
+  vcc_log(@"  source creation ABI: %@", videoABI ? @"video/8" : @"legacy/5");
 
   id backing = vcc_build_backing();
   if (!backing) return;
-  void *source = vcc_create_synthetic_source(create_fn, backing);
+  void *source = vcc_create_synthetic_source(create_p, videoABI, backing);
   if (!source) {
     vcc_log(@"  create returned NULL — abort");
     return;

@@ -520,6 +520,14 @@ test-vcam-drive-gate:
 		Tests/VCamDriveGateTests.c VCamCaptured/Frames/VCamDriveGate.c
 	@$(OUT)/VCamDriveGateTests
 
+.PHONY: test-vcam-source-scan
+test-vcam-source-scan:
+	@mkdir -p $(OUT)
+	xcrun --sdk macosx clang -O1 -Wall -Wextra -Werror -IVCamCaptured/Synthetic \
+		-o $(OUT)/VCamSourceScanTests \
+		Tests/VCamSourceScanTests.c VCamCaptured/Synthetic/VCamSourceScan.c
+	@$(OUT)/VCamSourceScanTests
+
 # Host proof harness for the crop, size and turn plan libcamfix uses for
 # AVCaptureVideoDataOutput frames.
 .PHONY: test-camfix-geometry

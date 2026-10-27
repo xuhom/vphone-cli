@@ -2,6 +2,130 @@
 
 ## Runtime boundary
 
+### Mac built-in camera source (2.10.3)
+
+Choose **Camera → Source: Mac Built-in Camera**, grant macOS Camera access,
+then choose **Start Streaming**. `VPhoneBuiltInCameraProducer` captures the
+built-in wide-angle camera at 1280×720 BGRA. It keeps only the latest copied
+frame, including the actual row stride; the existing 30 Hz producer sends it
+over the same VSOCK 1338 connection as Test Pattern and Video File. Switching
+the guest between front and back does not open another host camera or socket:
+`CamFixFrontCamera.m` already aliases both positions to the single vcam device.
+Stopping streaming, selecting Off, switching sources or closing the VM releases
+the capture session. A transport reconnect resumes only a requested stream,
+so a stopped camera is not silently reopened.
+
+Launchpad also needs its new `NSCameraUsageDescription` and
+`com.apple.security.device.camera` hardened-runtime entitlement. Rebuild and
+sign Launchpad with `Build/SignLaunchpad.sh`; updating only VPhone.bundle under
+an older hardened Launchpad does not supply that entitlement. No guest patches
+or new transport protocol are required. Permission denial, a missing built-in
+camera and session failures are reported in the VM window.
+
+In 2.10.4, the producer normalizes native sizes and YUV pixel buffers with
+Core Image instead of rejecting anything other than 1280×720 BGRA. A session
+preset does not guarantee output buffer dimensions (including Center Stage
+capture). Frames are scaled with their aspect ratio preserved and letterboxed
+to opaque black, then copied as BGRA for the same guest transport.
+
+In 2.10.8 (build 50), built-in camera BGRA frames are reflected horizontally
+with Accelerate before transport. Capture connection mirroring stays disabled
+to avoid a double reflection. Both guest aliases receive the same mirrored
+frame; file and test-pattern producers keep their own orientation. The host
+checks include asymmetric left/right pixels across multiple padded rows.
+
+In 2.10.9 (build 51), client preview layers use aspect fit with a unit
+contents rectangle and black background. This preserves the full landscape
+Mac camera field of view inside a portrait guest preview, with letterboxing
+instead of the previous aspect-fill crop. The shared source pixels, mirror
+and capture dimensions are unchanged. Live `2.10.9-local.b4e70b26` on
+Hom-iPhone was verified with the Mac built-in source streaming: the guest
+screenshot showed the complete 16:9 room/person view centered with black
+letterboxing, rather than the earlier enlarged face crop.
+
+In 2.10.10 (build 52), the requested framing returns to centered aspect
+fill: use the middle portrait strip of the landscape source and fill the
+preview height, cropping the sides without stretching. This supersedes the
+2.10.9 full-field letterbox preference; horizontal mirroring is retained.
+Verified live on Hom-iPhone with `2.10.10-local.bfa49d1b`: Camera.app
+screenshot shows the centered portrait crop filling the preview height.
+
+Host frame checks: `zsh VPhoneExecutable/VPhoneVirtualization/Tests/run-camera-frame-tests.sh`.
+
+### iOS 27.0.1 black preview confirmed (2026-10-19)
+
+On the existing `Hom-iPhone` guest (27.0.1, 24A446), both Core Bundle and
+guest environment were `2.10.4-local.a953de6c`. Camera.app was the verified
+foreground process. After starting the Mac built-in source,
+`vphone-vcam.log` published 1280×720, 5120-byte-row frames through #10307,
+but `vcamcaptured.log` reported `filter-chain scan: pc=0x0`,
+`per-source filter not located`, `init-statics block-invoke lookup failed`,
+and `data global resolve failed: _sSourceList not located`.
+The microphone-only provider was installed instead. Frame receipt alone
+does not establish the pixel contents or client delivery; synthetic video
+source registration has independently failed, so a host format conversion
+change cannot complete camera support on this guest. This reproduces the
+open iOS 27 source-registration issue described in
+`ios27_capture_microphone_source.md` §4. No guest restart, hook replacement
+or firmware reinstallation was performed for this diagnosis.
+
+### iOS 27.0.1 registration adaptation (2.10.5–2.10.6)
+
+The pristine V54 24A446 SystemOS cryptex confirms the onceToken branch enters
+the dispatch_once argument setup directly, rather than starting with a BL to
+an outlined helper. The old scanner skipped it. Its per-source ownership
+filter also uses x28/x20 instead of the hardcoded x25/x22. The new read-only
+`VCamSourceScan` handles both wrapper shapes and verifies saved-register flow
+and identical forward CBZ destinations. Against the complete pristine
+CMCapture text it uniquely returns block `0x1ec331160` (invoke
+`0x1b08b48f0`) and ownership filter `0x1b046e1c0`. These addresses are research
+observations, not runtime constants. Live 2.10.5 confirmed both locations,
+but stopped at the removed `FigCaptureSourceCreateFromBacking` export.
+
+In 2.10.6 the prewarming-chain scanner follows the saved signing-id register
+(x20 in 24A446, previously x22), with matching forward rejection branches.
+The accessor is local, not exported, on 24A446: the full text scan uniquely
+finds the call at `0x1b046df24` and accessor `0x1b04746c8`. Source creation
+uses the exported `FigVideoCaptureSourceCreateFromBacking` when the legacy
+export is absent. Its real caller at `0x1b04523b4` passes eight arguments:
+allocator, backing, audit-token pointer, flags, two optional backing options,
+client context, output pointer. The output moved from x4 to x7; the adapter
+uses a separate function type and supplies nil optional objects, as the stock
+caller does. The function stores its successful output through the saved x7
+at `0x1b0a70ffc`. The legacy five-argument path remains available.
+
+Run `make -C VPhoneGuestComponents test-vcam-source-scan` for the inline,
+outlined, register-allocation, bounds and ambiguity cases. Registration
+validates image data bounds, the invoke address and a heap CFArray; it no
+longer guesses that the first init-store global is the list. No new kernel,
+firmware or shared-cache file patch is involved. Live acceptance must show
+`appended source`, enumerate a video device in Camera.app, and display
+changing host frames; compile and offline scan success alone are insufficient.
+
+Live 2.10.6 on `Hom-iPhone` created the source with status 0, appended the
+list from 0 to 1, and Camera.app created an input with one port and
+`canAddInput=1`. Frames reached the hook, but the screenshot remained black.
+Camera initialized `AVSpatialOverCaptureVideoPreviewLayer` before adding its
+input (`forVcam=0`), then polled `isRunning` while the real graph stayed stopped.
+The preview pump started, but discovery was gated on `_setRunning:YES`, which
+never arrived. In 2.10.7, newly tracked vcam sessions start layer discovery as
+well as the pump, including the existing isRunning fallback. Idle processes
+with no vcam session still do not start the scan. First successful image delivery
+is logged once with dimensions and layer count.
+
+Live 2.10.7 (`2.10.7-local.b38ac618`, build 49) passed preview acceptance on
+`Hom-iPhone`: Camera.app PID 330 had one vcam input, discovered two preview
+layers, mapped shm and logged `[preview] first frame 1280x720 to 2 layer(s)`.
+A guest screenshot after source streaming showed the Mac built-in camera
+image inside Camera.app rather than the prior black preview. Photo saving,
+video recording and stop/reconnect behavior have not been revalidated in
+this run; successful preview must not be reported as full capture acceptance.
+
+Hardware acceptance still requires Camera permission for the rebuilt host app:
+check a moving preview on both guest positions, photo and video capture, then
+Stop Streaming / Off and confirm the Mac camera indicator turns off. Repeat
+after restarting the stream and reconnecting the transport.
+
 The host camera server sends BGRA frames over VSOCK port 1338. `vphoned`
 receives them, writes a sequence guarded shared memory frame, and posts
 `com.vphone.vcam.frame`. The optional `libvcamcaptured` hook reads that frame

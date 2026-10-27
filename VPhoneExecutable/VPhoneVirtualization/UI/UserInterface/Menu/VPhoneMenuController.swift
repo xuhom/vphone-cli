@@ -36,6 +36,10 @@ class VPhoneMenuController {
     }
     var onHardwareKeyboardChange: ((Bool) async throws -> Void)?
     var onFrameRateDisplayChange: ((Bool) -> Void)?
+    var onRemoteToggle: (() async throws -> Bool)?
+    var onRemotePairingCopy: (() throws -> String)?
+    var remoteToggleItem: NSMenuItem?
+    var remoteCopyItem: NSMenuItem?
     /// Saves the unlock-at-startup setting to this machine's config.plist.
     var onUnlockAtStartupChange: ((Bool) throws -> Void)?
     var unlockAtStartupItem: NSMenuItem?
@@ -75,6 +79,8 @@ class VPhoneMenuController {
     var skipSetupAssistantItem: NSMenuItem?
     var panelMenuItems: [VPhoneGuestPanel: NSMenuItem] = [:]
     var rotateMenuItems: [NSMenuItem] = []
+    /// The titlebar reuses these items' images, actions and availability.
+    var titlebarDeviceItems: [NSMenuItem] = []
     var touchIDMonitor: VPhoneTouchIDMonitor? {
         didSet { touchIDMonitor?.isEnabled = touchIDMenuItem?.state == .on }
     }
@@ -88,11 +94,20 @@ class VPhoneMenuController {
     var locationReplayStopItem: NSMenuItem?
     var screenRecorder: VPhoneScreenRecorder?
     var recordingItem: NSMenuItem?
-    var cameraServer: VPhoneCameraServer?
+    var cameraServer: VPhoneCameraServer? {
+        didSet {
+            cameraServer?.onSourceStateChange = { [weak self] in self?.updateCameraSourceState() }
+            cameraServer?.onError = { message in
+                VPhoneAlert.present(title: "Camera Error", message: message, style: .warning)
+            }
+            updateCameraSourceState()
+        }
+    }
     var cameraStatusItem: NSMenuItem?
     var cameraSourceOffItem: NSMenuItem?
     var cameraSourceTestPatternItem: NSMenuItem?
     var cameraSourceVideoFileItem: NSMenuItem?
+    var cameraSourceBuiltInItem: NSMenuItem?
     var cameraStartStopItem: NSMenuItem?
     weak var captureView: VPhoneVirtualMachineView?
     var batterySyncEnabled = false

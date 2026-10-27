@@ -209,11 +209,12 @@ struct TemplatesTests {
 
         // vphone-launchpad-cli vm create --block/--allow, reduced as fw
         // set-patches reduces them and split as New Machine splits them.
-        let declared: Set = ["ibss-cfw-serial_label", "system-debugserver-cfw-install", "dyld-cfw-camera", "kernel-exp-x", "kernel-boot-y"]
+        let declared: Set = ["ibss-cfw-serial_label", "system-debugserver-cfw-install", "dyld-cfw-camera", "kernel-exp-x", "kernel-boot-y", "filesystem-boot-cryptex_merge"]
+        let selectable = declared.subtracting(["filesystem-boot-cryptex_merge"])
         let inPreset: Set = ["ibss-cfw-serial_label", "system-debugserver-cfw-install", "kernel-boot-y"]
         let guest: Set = ["system-debugserver-cfw-install", "dyld-cfw-camera"]
         func requested(_ block: [String], _ allow: [String]) throws(VPhoneLaunchpadPatchOverrides.RequestError) -> VPhoneLaunchpadPatchOverrides {
-            try VPhoneLaunchpadPatchOverrides.requested(preset: "standard", block: block, allow: allow, declared: declared, inPreset: inPreset, guest: guest)
+            try VPhoneLaunchpadPatchOverrides.requested(preset: "standard", block: block, allow: allow, declared: declared, selectable: selectable, inPreset: inPreset, guest: guest)
         }
         let cli = try? requested(["system-debugserver-cfw-install", "ibss-cfw-serial_label", "dyld-cfw-camera"], ["kernel-exp-x", "kernel-boot-y"])
         // Blocking one the preset leaves off, or allowing one it turns on,
@@ -233,6 +234,12 @@ struct TemplatesTests {
             preconditionFailure("An unknown patch is refused")
         } catch {
             precondition(error == .unknown(["no-such-patch"]) && error.message.contains("No patch declares no-such-patch"), error.message)
+        }
+        do {
+            _ = try requested([], ["filesystem-boot-cryptex_merge"])
+            preconditionFailure("A patch from an excluded set is refused")
+        } catch {
+            precondition(error == .unavailable("standard", ["filesystem-boot-cryptex_merge"]), error.message)
         }
         do {
             _ = try requested(["kernel-boot-y"], ["kernel-boot-y"])

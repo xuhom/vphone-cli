@@ -313,12 +313,17 @@ nonisolated struct VPhoneLaunchpadPatchOverrides: Hashable, Sendable {
         block: [String],
         allow: [String],
         declared: Set<String>,
+        selectable: Set<String>,
         inPreset: Set<String>,
         guest: Set<String>,
     ) throws(RequestError) -> Self {
         let unknown = Set(block + allow).subtracting(declared)
         guard unknown.isEmpty else {
             throw .unknown(unknown.sorted())
+        }
+        let unavailable = Set(block + allow).subtracting(selectable)
+        guard unavailable.isEmpty else {
+            throw .unavailable(preset, unavailable.sorted())
         }
         let contradictory = Set(block).intersection(allow)
         guard contradictory.isEmpty else {
@@ -331,12 +336,15 @@ nonisolated struct VPhoneLaunchpadPatchOverrides: Hashable, Sendable {
 
     nonisolated enum RequestError: Error, Equatable {
         case unknown([String])
+        case unavailable(String, [String])
         case contradictory([String])
 
         var message: String {
             switch self {
             case let .unknown(patches):
                 "No patch declares \(patches.joined(separator: ", ")). Run exec fw patches for the identifiers."
+            case let .unavailable(preset, patches):
+                "Preset \(preset) does not include the patch set for \(patches.joined(separator: ", ")). Choose a preset that includes that set."
             case let .contradictory(patches):
                 "\(patches.joined(separator: ", ")) cannot be both blocked and allowed."
             }

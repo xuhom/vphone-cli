@@ -150,3 +150,33 @@ The original manifests and device tree were extracted by HTTP ranges with
 the repository's `VPhoneRemoteZip`. Raw logs and scratch artifacts remain
 local; host paths, per-machine identifiers and runtime addresses are not
 included in this research record.
+
+## Inner panel probe (2026-10-27)
+
+The earlier host Unfold button only enlarged the outer framebuffer. The
+current vphone600 Mac graphics configuration has one display, and the macOS
+Virtualization.framework header for `VZMacGraphicsDeviceConfiguration.displays`
+states that a maximum of one is supported. A runtime call to
+`VZGraphicsDisplay.reconfigure(configuration:)` on the running Melon VM failed
+with "The display does not support reconfiguration at this time". No guest
+display change occurred.
+
+Two separate, temporary boot configurations used the real Duo inner panel
+resolution in both orientations: 2670 x 1878 at 430 ppi, then 1878 x 2670 at
+430 ppi. The guest agent booted in both cases, but the VZ framebuffer captures
+were entirely black. The guest still reported `device.screen` as 669 x 951
+points at 3x and the console logged
+`IOMFB: default_fb_surface: No Default FB Surface found. Return error`.
+The guest's IOMobileFramebuffer userclient mapped display type 0, so changing
+the host scanout size alone did not register the DeviceTree's `display1` as an
+active inner panel. The host configuration was restored to the original
+1398 x 2034 outer-display mode after this probe. In follow-up boots, the
+guest still stopped at the Apple logo with an all-black guest screenshot,
+including one boot using the previously working host bundle. The guest agent
+responded and reported the original 466 x 678 points, but SpringBoard-backed
+RPCs hung. Do not treat the display restoration as a recovered guest UI.
+
+A real fold implementation therefore needs guest-side display registration
+and a fold-state transition that swaps the active panel without relying on
+runtime VZ display reconfiguration. The old zoom-based host control is hidden
+until that display path exists; it was not an inner-screen implementation.

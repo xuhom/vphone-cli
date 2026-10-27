@@ -380,6 +380,13 @@
 > third-party container signing is a preflight refusal, never an implicit repair.
 > This adds no instruction patches. Full application and performance equivalence
 > remain outside this result; see the runbook for current verification scope.
+**DeviceHub identity presentation (2.10.11, 2026-10-20).** The existing
+`system-launchdaemons-boot-environment` deployment's libmisfix now answers
+`IsVirtualDevice` as false only in remoted's MobileGestalt queries, including
+the obfuscated key used by iOS 27.0.1. This changes RSD's advertised reality
+without changing hardware detection in other processes or adding a firmware
+byte patch. Evidence and deployment verification:
+`Research/Guest/devicehub_device_reality.md`.
 
 > **iPhone19,2 / ARM64E_X1 compatibility (validated 2026-10-17):** the tested
 > pairing is iPhone 18 Pro 27.0.1 (24A446), V63AP, with cloudOS 26.4
@@ -827,6 +834,19 @@
 > format with device exposure values. Details and validation:
 > [`Guest/virtual_camera_transport.md`](Guest/virtual_camera_transport.md#front-camera-clients-and-data-output-frames-2026-10-10).
 
+> **Camera registration on iOS 27.0.1 (2026-10-19):** the existing
+> `libvcamcaptured` source registration now recognizes inline dispatch_once
+> wrappers as well as outlined helpers, and matches the existing ownership
+> filter independently of callee-saved register allocation. The prewarming
+> allowlist uses a register-independent call-chain scan when its accessor is
+> not exported. iOS 27 video source creation uses the new eight-argument
+> `FigVideoCaptureSourceCreateFromBacking` ABI (output in x7); 26.x retains
+> the legacy five-argument path.
+> No new firmware patch or manifest entry: this repairs the existing runtime
+> hook. Block literals, invoke pointers and array-global candidates are bounded
+> to the framework image; no unverified first-global fallback remains. Offline
+> checks on the pristine 24A446 V54 CMCapture locate the init block and filter.
+> Live guest acceptance is tracked in `Guest/virtual_camera_transport.md`.
 > **Camera hook: the virtual camera on iOS 27 (2026-10-22):** no new patch
 > and no new library; `libvcamcaptured.dylib` and `libcamfix.dylib` change
 > behaviour only. iOS 27 has no `_sSourceList`, so `libvcamcaptured` adds

@@ -1,5 +1,7 @@
+import Accelerate
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import CoreVideo
 import Foundation
 
@@ -14,12 +16,17 @@ struct VPhoneCameraFrame: Sendable {
 
 /// Frame source for the host-side virtual camera server.
 ///
-/// `@unchecked Sendable` because each conforming producer is mutated only
-/// from the camera server's producer queue (single writer); Swift can't
-/// see the queue isolation, so we opt out of the strict-concurrency
-/// check.
+/// Pull-based producers run on the server's serial producer queue. Live
+/// capture also uses a private session queue and locks its latest frame.
 protocol VPhoneFrameProducer: AnyObject, Sendable {
     func nextFrame() -> VPhoneCameraFrame?
+    func start()
+    func stop()
+}
+
+extension VPhoneFrameProducer {
+    func start() {}
+    func stop() {}
 }
 
 // MARK: - Test pattern
@@ -317,5 +324,175 @@ final class VPhoneVideoFileProducer: VPhoneFrameProducer, @unchecked Sendable {
         print("[camera] video frame mismatch: \(srcWidth)x\(srcHeight) "
             + "format \(CVPixelBufferGetPixelFormatType(pb))")
         return nil
+    }
+}
+
+// MARK: - Mac built-in camera
+
+/// A single physical source feeds both guest camera aliases over port 1338.
+/// Session lifecycle and sample delivery share captureQueue; the server reads
+/// the latest immutable frame under a lock, with no accumulating frame queue.
+final class VPhoneBuiltInCameraProducer: NSObject, VPhoneFrameProducer,
+    AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable
+{
+    private let session = AVCaptureSession()
+    private let captureQueue = DispatchQueue(label: "com.vphone.camera.capture")
+    private let lock = NSLock()
+    private var latestFrame: VPhoneCameraFrame?
+    private var running = false
+    private var observers: [NSObjectProtocol] = []
+    private let onError: @Sendable (String) -> Void
+    private static let frameContext = CIContext(options: [.cacheIntermediates: false])
+
+    init(onError: @escaping @Sendable (String) -> Void) throws {
+        self.onError = onError
+        super.init()
+        guard let device = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: .unspecified
+        ).devices.first else {
+            throw Self.error("No Mac built-in camera was found.")
+        }
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        let input = try AVCaptureDeviceInput(device: device)
+        guard session.canAddInput(input) else {
+            throw Self.error("Unable to open the Mac built-in camera.")
+        }
+        session.addInput(input)
+        // A preset is a preference, not a guarantee about delivered buffers.
+        // Normalize the actual frames below, including Center Stage outputs.
+        if session.canSetSessionPreset(.hd1280x720) {
+            session.sessionPreset = .hd1280x720
+        } else if session.canSetSessionPreset(.high) {
+            session.sessionPreset = .high
+        }
+        let output = AVCaptureVideoDataOutput()
+        output.alwaysDiscardsLateVideoFrames = true
+        output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        output.setSampleBufferDelegate(self, queue: captureQueue)
+        guard session.canAddOutput(output) else {
+            throw Self.error("Unable to read frames from the Mac built-in camera.")
+        }
+        session.addOutput(output)
+        if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
+        for name in [AVCaptureSession.runtimeErrorNotification, AVCaptureSession.wasInterruptedNotification] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: session, queue: nil
+            ) { [weak self] notification in
+                let message = (notification.userInfo?[AVCaptureSessionErrorKey] as? NSError)?.localizedDescription
+                    ?? "Mac camera capture was interrupted. Stop and start streaming to retry."
+                self?.onError(message)
+            })
+        }
+        print("[camera] built-in source = \(device.localizedName)")
+    }
+
+    deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
+    func start() {
+        captureQueue.async { [self] in
+            running = true
+            session.startRunning()
+            if !session.isRunning {
+                running = false
+                onError("The Mac built-in camera could not start. Check Camera access in System Settings.")
+            }
+        }
+    }
+
+    func stop() {
+        captureQueue.async { [self] in
+            running = false
+            session.stopRunning()
+            lock.lock()
+            latestFrame = nil
+            lock.unlock()
+        }
+    }
+
+    func nextFrame() -> VPhoneCameraFrame? {
+        lock.lock()
+        defer { lock.unlock() }
+        return latestFrame
+    }
+
+    func captureOutput(_: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from _: AVCaptureConnection) {
+        guard running, let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        guard let frame = Self.frame(from: buffer) else {
+            running = false
+            onError("Unable to convert the Mac camera frame (\(CVPixelBufferGetWidth(buffer)) × \(CVPixelBufferGetHeight(buffer)), pixel format \(CVPixelBufferGetPixelFormatType(buffer)).")
+            return
+        }
+        lock.lock()
+        latestFrame = frame
+        lock.unlock()
+    }
+
+    static func frame(from buffer: CVPixelBuffer) -> VPhoneCameraFrame? {
+        let sourceWidth = CVPixelBufferGetWidth(buffer)
+        let sourceHeight = CVPixelBufferGetHeight(buffer)
+        guard sourceWidth > 0, sourceHeight > 0 else { return nil }
+        if sourceWidth == 1280, sourceHeight == 720,
+           CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA {
+            return copyFrame(from: buffer)
+        }
+
+        // AVFoundation may deliver native dimensions or YUV despite the
+        // requested preset/settings. Convert to the guest's fixed format,
+        // preserving aspect ratio and filling unused space with opaque black.
+        var destination: CVPixelBuffer?
+        let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
+        guard CVPixelBufferCreate(nil, 1280, 720, kCVPixelFormatType_32BGRA,
+                                  attributes, &destination) == kCVReturnSuccess,
+              let destination else { return nil }
+        let image = CIImage(cvPixelBuffer: buffer)
+        let scale = min(1280 / image.extent.width, 720 / image.extent.height)
+        let normalized = image.transformed(by: CGAffineTransform(
+            translationX: -image.extent.minX, y: -image.extent.minY
+        )).transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let centered = normalized.transformed(by: CGAffineTransform(
+            translationX: (1280 - normalized.extent.width) / 2,
+            y: (720 - normalized.extent.height) / 2
+        ))
+        let bounds = CGRect(x: 0, y: 0, width: 1280, height: 720)
+        let background = CIImage(color: .black).cropped(to: bounds)
+        frameContext.render(centered.composited(over: background), to: destination,
+                            bounds: bounds, colorSpace: CGColorSpaceCreateDeviceRGB())
+        return copyFrame(from: destination)
+    }
+
+    private static func copyFrame(from buffer: CVPixelBuffer) -> VPhoneCameraFrame? {
+        guard CVPixelBufferLockBaseAddress(buffer, .readOnly) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        guard width == 1280, height == 720, let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        // Mirror the normalized BGRA frame once before transport, so both
+        // guest camera aliases receive the same Mac self-view orientation.
+        var pixels = Data(bytes: base, count: stride * height)
+        var source = vImage_Buffer(data: base, height: vImagePixelCount(height),
+                                   width: vImagePixelCount(width), rowBytes: stride)
+        let status = pixels.withUnsafeMutableBytes { bytes -> vImage_Error in
+            var destination = vImage_Buffer(data: bytes.baseAddress,
+                                            height: vImagePixelCount(height),
+                                            width: vImagePixelCount(width), rowBytes: stride)
+            return vImageHorizontalReflect_ARGB8888(&source, &destination, vImage_Flags(kvImageNoFlags))
+        }
+        guard status == kvImageNoError else { return nil }
+        return VPhoneCameraFrame(
+            width: width, height: height, bytesPerRow: stride,
+            timestampNS: UInt64(ProcessInfo.processInfo.systemUptime * 1_000_000_000),
+            pixels: pixels
+        )
+    }
+
+    private static func error(_ message: String) -> NSError {
+        NSError(domain: "VPhoneBuiltInCamera", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 }

@@ -1,4 +1,9 @@
-// MISFixDeviceIdentity.c — answer the profile check with a chosen UDID.
+// MISFixDeviceIdentity.c — configured UDID and CoreDevice identity presentation.
+//
+// In remoted alone, also publish IsVirtualDevice=false in its RSD handshake
+// so DeviceHub classifies the guest as an iPhone rather than Virtual Machine.
+// This is independent of UDID configuration. See
+// Research/Guest/devicehub_device_reality.md for the inspected call path.
 //
 // A provisioning profile names the devices it covers. misagent refuses to
 // install one that does not name this device:
@@ -109,6 +114,7 @@
 #include "MISFixInterpose.h"
 
 #include <mach-o/dyld.h>
+#include <dispatch/dispatch.h>
 
 extern CFTypeRef MGCopyAnswer(CFStringRef property);
 // Three arguments: the middle one is an options dictionary. Declaring two
@@ -173,6 +179,23 @@ __attribute__((constructor)) static void vpAnnounce(void) {
 static CFTypeRef vpOverrideFor(CFStringRef property) {
     if (property == NULL || CFGetTypeID(property) != CFStringGetTypeID())
         return NULL;
+
+    // remoted publishes this MG answer as IsVirtualDevice in the RSD
+    // handshake. CoreDevice derives hardware.reality from that property.
+    // Keep this presentation override local to the identity publisher: other
+    // processes must still discover the virtual hardware they actually use.
+    // iOS 27.0.1 remoted: MGCopyAnswer at 0x10000eebc, publish at 0x10000eee0.
+    // The second spelling is base64(MD5("MGCopyAnswer" + "IsVirtualDevice"))
+    // without padding, as carried in the shipped executable's CFString.
+    if (MISFixProcessIs("remoted") &&
+        (CFEqual(property, CFSTR("IsVirtualDevice")) ||
+         CFEqual(property, CFSTR("MrC93gcyPVLHmEbzUu9uzQ")))) {
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            MISFixLog("RSD IsVirtualDevice -> false (physical iPhone presentation)");
+        });
+        return CFRetain(kCFBooleanFalse);
+    }
     if (!CFEqual(property, kMISFixUniqueDeviceIDProperty)
         && !CFEqual(property, kMISFixUniqueDeviceIDObfuscatedProperty))
     {

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import QuartzCore
 import Virtualization
 import VPhoneCoreKit
 
@@ -12,6 +13,8 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     private var homePodGuest = false
     private(set) var touchIDMonitor: VPhoneTouchIDMonitor?
     private var homeButton: NSButton?
+    private var deviceButtons: [NSButton] = []
+    private var deviceMenuItems: [NSMenuItem] = []
     /// An Apple TV's TV button: holding the titlebar button holds it in the
     /// guest, so a click goes Home and a hold opens Control Center.
     var homeButtonHoldsInGuest = false {
@@ -36,6 +39,9 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         screenWidth: Int,
         screenHeight: Int,
         screenScale: Double,
+        isPhoneGuest: Bool,
+        isPadGuest: Bool,
+        isDuoGuest: Bool,
         hardwareKeyboardEnabled: Bool,
         keySender: VPhoneVirtualMachineKeySender,
         control: VPhoneGuestControl,
@@ -84,6 +90,9 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             container = cap
         } else {
             let display = VPhoneDisplayContainerView(displayView: view)
+            display.isPhoneGuest = isPhoneGuest
+            display.isPadGuest = isPadGuest
+            display.isDuoGuest = isDuoGuest
             display.panelSize = windowSize
             displayContainer = display
             homePodDisplayView = nil
@@ -101,24 +110,27 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.level = .normal
         VPhoneAlert.hostWindow = window
-        window.contentAspectRatio = windowSize
+        if displayContainer?.hasRoundedScreen != true { window.contentAspectRatio = windowSize }
         window.title = name
         window.contentView = container
+        if displayContainer?.hasRoundedScreen == true {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
 
         // The scene belongs to the VM, not to the app: every VM directory keeps
         // its own window frame, and a newly created VM opens centered instead
         // of inheriting the last frame another VM saved.
         let sceneName = "vphone-scene-\(sceneIdentifier)"
         window.identifier = NSUserInterfaceItemIdentifier(sceneName)
-        if !window.setFrameUsingName(sceneName) {
+        let restoredFrame = window.setFrameUsingName(sceneName)
+        if !restoredFrame {
             window.center()
         }
         window.setFrameAutosaveName(sceneName)
         observeKeyState(of: window)
-
-        // An empty unified toolbar gives the title bar its full height. The Home
-        // button is a titlebar accessory rather than a toolbar item so that a
-        // narrow window truncates the title instead of moving it to overflow.
+        // The titlebar accessory keeps device buttons visible while the title
+        // truncates in a narrow window. HomePod uses its own display controls.
         let toolbar = NSToolbar(identifier: "vphone-toolbar")
         toolbar.displayMode = .iconOnly
         toolbar.allowsDisplayModeCustomization = false
@@ -128,11 +140,16 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         if !homePodGuest {
             let homeAccessory = makeHomeAccessory()
             window.addTitlebarAccessoryViewController(homeAccessory)
+            window.contentMinSize.width = max(window.contentMinSize.width, homeAccessory.view.frame.width + 160)
             updateHomeButton(connected: false)
             trailingInset = homeAccessory.view.frame.width
         }
         pinWindowButtons(in: window)
         installTitle(name, in: window, trailingInset: trailingInset)
+
+        // Size after installing the toolbar, which changes the content height.
+        // A saved sideways frame starts in portrait until the guest reports it.
+        applyOrientation(.portrait, to: window, force: true)
 
         let controller = NSWindowController(window: window)
         controller.showWindow(nil)
@@ -191,6 +208,37 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - Close
+
+    func windowDidEnterFullScreen(_: Notification) {
+        displayContainer?.needsLayout = true
+    }
+
+    func windowDidExitFullScreen(_: Notification) {
+        displayContainer?.needsLayout = true
+        windowController?.window?.invalidateShadow()
+    }
+
+    func windowDidEndLiveResize(_: Notification) {
+        windowController?.window?.invalidateShadow()
+    }
+
+    /// A fixed transparent gap cannot be represented by contentAspectRatio:
+    /// only the screen scales, while the space below the titlebar stays fixed.
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard let container = displayContainer, container.hasRoundedScreen,
+              !sender.styleMask.contains(.fullScreen)
+        else { return frameSize }
+        var proposed = sender.contentRect(forFrameRect: NSRect(origin: .zero, size: frameSize))
+        let current = sender.contentRect(forFrameRect: sender.frame)
+        let panel = container.orientation.displayedSize(panel: panelSize)
+        let gap = container.titlebarGap
+        if abs(proposed.width - current.width) >= abs(proposed.height - current.height) {
+            proposed.size.height = proposed.width * panel.height / panel.width + gap
+        } else {
+            proposed.size.width = max(1, proposed.height - gap) * panel.width / panel.height
+        }
+        return sender.frameRect(forContentRect: proposed).size
+    }
 
     /// Closing the display window stops the VM, so the close button asks the
     /// same question as ⌘Q, with the window still up, instead of closing
@@ -254,12 +302,19 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     /// full-screen one keeps the screen and letterboxes the turned panel.
     private func applyOrientation(_ orientation: VPhoneDisplayOrientation, to window: NSWindow, force: Bool = false) {
         guard let container = displayContainer, force || container.orientation != orientation else { return }
-        window.contentAspectRatio = orientation.displayedSize(panel: panelSize)
+        if !container.hasRoundedScreen {
+            window.contentAspectRatio = orientation.displayedSize(panel: panelSize)
+        }
         var frame: NSRect?
         if !window.styleMask.contains(.fullScreen) {
             let current = window.contentRect(forFrameRect: window.frame)
-            let visible = window.screen.map { window.contentRect(forFrameRect: $0.visibleFrame) } ?? .zero
-            let target = orientation.contentRect(from: current, panel: panelSize, within: visible)
+            var screenRect = current
+            var visible = window.screen.map { window.contentRect(forFrameRect: $0.visibleFrame) } ?? .zero
+            let gap = container.titlebarGap
+            screenRect.size.height = max(1, screenRect.height - gap)
+            visible.size.height = max(0, visible.height - gap)
+            var target = orientation.contentRect(from: screenRect, panel: panelSize, within: visible)
+            target.size.height += gap
             if target != current {
                 frame = window.frameRect(forContentRect: target)
             }
@@ -308,6 +363,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     private weak var buttonWindow: NSWindow?
     private var observedButtons = Set<ObjectIdentifier>()
+    private let deviceWindowMask = CAShapeLayer()
 
     /// AppKit insets the close button 19 pt, puts the buttons back there
     /// whenever it lays out the title bar, and may replace them when the
@@ -334,6 +390,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     private func placeWindowButtons() {
         guard let window = buttonWindow else { return }
+        updateTitlebarCorners(in: window)
         var x = Self.titlebarSpacing
         for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             guard let button = window.standardWindowButton(kind) else { continue }
@@ -349,6 +406,40 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             }
             x = button.frame.maxX + Self.titlebarSpacing
         }
+    }
+
+    /// Clip the frame view as well as the titlebar's material and separator;
+    /// rounding only the button container leaves the system background square.
+    private func updateTitlebarCorners(in window: NSWindow) {
+        guard displayContainer?.hasRoundedScreen == true,
+              let content = window.contentView, let frame = content.superview
+        else { return }
+        frame.wantsLayer = true
+        guard let layer = frame.layer else { return }
+        if window.styleMask.contains(.fullScreen) {
+            if layer.mask === deviceWindowMask { layer.mask = nil }
+            return
+        }
+        let contentRect = content.convert(content.bounds, to: frame)
+        let bounds = frame.bounds
+        let titlebar = CGRect(x: bounds.minX, y: contentRect.maxY,
+                              width: bounds.width, height: bounds.maxY - contentRect.maxY)
+        guard titlebar.height > 0 else { return }
+        let systemRadius: CGFloat
+        if #available(macOS 26.0, *) { systemRadius = 26 } else { systemRadius = 10 }
+        let radius = min(layer.cornerRadius > 0 ? layer.cornerRadius : systemRadius, titlebar.height / 2)
+        let path = CGMutablePath()
+        path.addRect(contentRect)
+        path.addRoundedRect(in: titlebar, cornerWidth: radius, cornerHeight: radius)
+        // Let AppKit retain the native upper corners, including its curve.
+        path.addRect(CGRect(x: titlebar.minX, y: titlebar.midY,
+                            width: titlebar.width, height: titlebar.height / 2))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        deviceWindowMask.frame = bounds
+        deviceWindowMask.path = path
+        layer.mask = deviceWindowMask
+        CATransaction.commit()
     }
 
     /// The window's own title would sit AppKit's wider gap after the buttons,
@@ -445,6 +536,13 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Home Button
 
+    /// Resize a copy so the shared Device menu symbols keep their original size.
+    private static func titlebarImage(_ image: NSImage?) -> NSImage? {
+        guard let image = image?.copy() as? NSImage else { return nil }
+        image.size = NSSize(width: image.size.width * 1.8, height: image.size.height * 1.8)
+        return image
+    }
+
     private static let homeImage = NSImage(
         systemSymbolName: "circle.circle",
         accessibilityDescription: VPhoneLocalization.text("Home"),
@@ -477,17 +575,23 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     private func makeHomeAccessory() -> NSTitlebarAccessoryViewController {
         let button = VPhoneHomeButton(image: Self.homeImage, target: self, action: #selector(homePressed))
-        if #available(macOS 26.0, *) {
-            button.bezelStyle = .glass
-            button.borderShape = .circle
-        } else {
-            button.bezelStyle = .toolbar
-        }
-        button.controlSize = .large
         button.toolTip = VPhoneLocalization.text("Home Button")
-        button.translatesAutoresizingMaskIntoConstraints = false
         homeButton = button
         applyHomeButtonHold()
+        deviceButtons = (0..<5).map { _ in NSButton(image: NSImage(), target: nil, action: nil) }
+        let buttons = deviceButtons + [button]
+        for control in buttons {
+            if #available(macOS 26.0, *) {
+                control.bezelStyle = .glass
+                control.borderShape = .circle
+            } else {
+                control.bezelStyle = .toolbar
+            }
+            control.controlSize = .large
+            control.imageScaling = .scaleNone
+            control.translatesAutoresizingMaskIntoConstraints = false
+            control.isEnabled = false
+        }
 
         // A titlebar accessory takes its width from the view's frame, so the
         // container is sized explicitly; otherwise the button collapses to 0.
@@ -496,16 +600,30 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         // keeps room for them.
         let leadingInset: CGFloat = 6
         let trailingInset = Self.titlebarSpacing
+        // Approximately 3 mm between button hit areas, independent of VM scale.
+        let spacing: CGFloat = 3 * 72 / 25.4
+        let side = button.fittingSize.height * 1.2
         let container = NSView()
-        container.addSubview(button)
+        let stack = NSStackView(views: buttons)
+        stack.orientation = .horizontal
+        stack.spacing = spacing
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        for control in buttons {
+            NSLayoutConstraint.activate([
+                control.widthAnchor.constraint(equalToConstant: side),
+                control.heightAnchor.constraint(equalToConstant: side),
+            ])
+        }
         NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: leadingInset),
-            button.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -trailingInset),
-            button.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            button.widthAnchor.constraint(equalTo: button.heightAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: leadingInset),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -trailingInset),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
-        let side = button.fittingSize.height
-        container.frame.size = NSSize(width: leadingInset + side + trailingInset, height: side)
+        container.frame.size = NSSize(
+            width: leadingInset + side * CGFloat(buttons.count) + spacing * CGFloat(buttons.count - 1) + trailingInset,
+            height: side,
+        )
 
         let accessory = NSTitlebarAccessoryViewController()
         accessory.view = container
@@ -513,12 +631,29 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         return accessory
     }
 
+    func connectDeviceButtons(to menu: VPhoneMenuController) {
+        deviceMenuItems = menu.titlebarDeviceItems
+        for (index, pair) in zip(deviceButtons, deviceMenuItems).enumerated() {
+            let (button, item) = pair
+            button.image = Self.titlebarImage(item.image)
+            button.target = item.target
+            button.action = item.action
+            let label = index == 3 ? VPhoneLocalization.text("Lock") : item.title
+            button.toolTip = label
+            button.setAccessibilityLabel(label)
+        }
+        updateHomeButton(connected: control?.isConnected == true)
+    }
+
     /// The button presses Home through vphoned, so it is disabled and slashed
     /// while vphoned is not connected.
     private func updateHomeButton(connected: Bool) {
+        for (button, item) in zip(deviceButtons, deviceMenuItems) {
+            button.isEnabled = connected && item.isEnabled
+        }
         guard let homeButton else { return }
         homeButton.isEnabled = connected
-        homeButton.image = connected ? Self.homeImage : Self.homeSlashImage
+        homeButton.image = Self.titlebarImage(connected ? Self.homeImage : Self.homeSlashImage)
     }
 
     // MARK: - Actions

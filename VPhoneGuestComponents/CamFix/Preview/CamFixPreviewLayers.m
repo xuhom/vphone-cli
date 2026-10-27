@@ -67,10 +67,25 @@ static void cfx_pump_preview_once(void) {
   // Bootstrap fallback: no graph yet, straight from the shm frame.
   if (!img) img = cfx_build_cgimage_from_shm();
   if (!img) return;
+  static dispatch_once_t firstFrame;
+  dispatch_once(&firstFrame, ^{
+    cfxlog(@"[preview] first frame %zux%zu to %lu layer(s)",
+           CGImageGetWidth(img), CGImageGetHeight(img),
+           (unsigned long)layers.count);
+  });
   dispatch_async(dispatch_get_main_queue(), ^{
     for (CALayer *layer in layers) {
       layer.contents = (__bridge id)img;
+      // Center-crop the landscape source into the portrait preview,
+      // filling its height without stretching the image.
       layer.contentsGravity = kCAGravityResizeAspectFill;
+      layer.contentsRect = CGRectMake(0, 0, 1, 1);
+      const CGFloat black[] = {0, 0, 0, 1};
+      CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+      CGColorRef color = CGColorCreate(space, black);
+      layer.backgroundColor = color;
+      CGColorRelease(color);
+      CGColorSpaceRelease(space);
     }
     CGImageRelease(img);
   });
