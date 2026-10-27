@@ -180,3 +180,157 @@ A real fold implementation therefore needs guest-side display registration
 and a fold-state transition that swaps the active panel without relying on
 runtime VZ display reconfiguration. The old zoom-based host control is hidden
 until that display path exists; it was not an inner-screen implementation.
+
+## Outer baseline and fold service investigation (2026-10-27)
+
+On the installed 2.13.8 local host and guest environment, two cold boots reached
+an interactive outer display at 1398 x 2034. The first agent ping (12–17 seconds)
+preceded usable SpringBoard UI by substantially more time. Early black captures
+and blocked SpringBoard queries are not a completed boot test. After allowing
+startup to settle and unlocking, Settings launched with `frontmost_verified`
+and rendered; a second cold boot rendered the Home screen. No guest preference
+reset or firmware reinstall was needed. This establishes a working baseline on
+this build, not a diagnosed permanent fix for every earlier black-screen case.
+
+Runtime evidence from iOS 27.1 (24A94425):
+
+- `CADisplay.displays` contains `LCD primary` plus five wireless placeholders.
+  The physical display has ID 1, type 0, and one mode, 1398 x 2034. There is no
+  second physical display in this configuration.
+- `CMMagicPoseManager.isAvailable` is false. Its events distinguish `Closed`
+  (1), `PartiallyOpen` (2), `OpenFlat` (3), `OpenAmbiguous` (4) and
+  `OpenTransitioning` (5); these values were read using
+  `CMMagicPoseEvent.stringForHingeState:`, not inferred from UIKit's enum.
+- `SBFDevicePoseProvider` feeds `SBDisplayContentModeCoordinator` through
+  `poseProvider:didUpdateFromPose:toPose:`. The framework contains
+  `SBFFoldingDualDisplayContentModeResolutionPolicy`, with
+  `preferredPrimarySurfaceTypeForDevicePose:` and
+  `resolvedModeForDisplayProxy:devicePose:`. `SBContinuousFoldController`
+  observes the resulting transition. UIKit receives `_UISceneHingeState`,
+  including magicPose, status, nextStatus, progress and angleDegrees.
+- `SBSDisplayToolService` exposes `swapDisplayWithSettings:completionHandler:`.
+  The measured ABI is `v88@0:8{?=qdqqBqdd}16@?80`. Its connection serializes
+  duration (offset 8), deviceOrientation (16), profileOverride (24),
+  waitForCompletion (32), targetMode (40) and targetHingePosition (48).
+  An isolated signed test client received a successful callback for an instant
+  swap, twice. Neither changed the framebuffer dimensions or created another
+  physical display. Callback success alone is not successful unfolding.
+
+Host evidence on macOS 27.0.1:
+
+- `VZMacGraphicsDeviceConfiguration` has private `_displayPortCount` and
+  `_setDisplayPortCount:` methods. Both the default port count and
+  `_maximumAllowedDisplayCount` return 1.
+- Two configured displays fail validation with "Number of displays is greater
+  than the configured display port count." Setting the port count to 2 fails
+  with "The display port count is invalid, it must be between 1 and the maximum
+  supported."
+- An isolated test process replacing only the class maximum with 2 passes this
+  validation. This does **not** establish backend or guest support. A boot probe
+  must verify both framebuffers and recovery before any fold UI is exposed.
+
+The machine was shut down and an APFS clone backup of Disk.img plus matching
+SEPStorage, nvram.bin and configuration was retained before the dual-port boot
+probe. No host security settings were changed.
+
+### Dual-port boot result
+
+The temporary host change set the port count and configuration to two, with
+outer 1398 x 2034 and inner 1878 x 2670 panels, and replaced the maximum-count
+method only inside that VM process. The full signed bundle built and passed
+Launchpad preflight. Configuration validation succeeded, but VM start failed
+**before guest boot** with `VZErrorDomain Code=1` (internal virtualization error).
+The host's `com.apple.Virtualization.VirtualMachine` process logged
+`com.apple.VirtualizationCore:DeviceFactory: Failed to initialize device` (the
+device name is private/redacted). This does not identify an exact backend
+function, and does not prove every single-scanout design impossible. It does
+prove that relaxing the front-end display-count check is insufficient on this
+host. The temporary host override and second-display configuration were removed;
+the machine was rebound to the verified outer-display bundle.
+
+A reusable read-only probe is in `DuoDisplay/inspect.js`. Remaining work is the
+rendering transport/registration underneath the discovered fold-state chain.
+No functional Unfold UI or inner-screen support is claimed by these probes.
+
+### Fixed-inner single-scanout experiment (2026-10-27)
+
+Tested on the existing Duo, with its exact Preboot IMG4 and outer manifest
+saved before changes. The original personalized manifest and restore-info
+bytes were retained when replacing the device-tree IM4P. No kernel, shared
+cache, or host security changes were made in this experiment.
+
+The donor `/product/display1` describes a 270-degree mounting orientation,
+surface type 2, scale 3 and four radius-55 corners. Its fold-region frame has
+width 1878 and midpoint 1335. A temporary tree copied this presentation to
+virtual `display0` (index 0), omitting the physical framebuffer UUID and
+phandle. A second variant also copied the presentation to the root product
+fallback and set the chosen display rotations to 270. Neither is a released
+patch: the missing physical-identity association remains unproven.
+
+Observed results:
+
+- One 1878 x 2670 scanout at 460 ppi boots and produces native framebuffer
+  images, including Settings with two-column content. Earlier black startup
+  frames alone were insufficient evidence of permanent rendering failure.
+- Starting the same mapping at 2670 x 1878 produces a wide framebuffer, but
+  Home and Settings remain vertically laid out and clipped with a black right
+  region. This is not a successful landscape inner-screen boot.
+- The raw `FBSDisplayConfiguration` follows the scanout, while the disposable
+  probe's UIKit initial context reports 669 x 951 points (2007 x 2853 pixels)
+  with other modes including 626 x 890. This is a measured mismatch, not proof
+  that the probe's UIKit context equals SpringBoard's live configuration.
+- `CADisplay.nativeOrientation` and `currentOrientation` remain `rot0`, even
+  with the donor/chosen rotation experiment. `display.rotation` is refused
+  with "The device did not apply the requested rotation."
+- Constructing `SBSDisplayConfigurationContext` with an arbitrary screenClass
+  is NOT a valid surface-classification probe. Inspection of its factory shows
+  surface type derived from the supplied class (24/25), so passing 0 and then
+  reading type 0 says nothing about the live display registration.
+
+The experiment's Preboot tree and host resolution were reverted to the exact
+saved outer configuration. Do not add an "inner" startup switch that only
+changes width/height: correct system display classification, pose, compositor
+geometry and input mapping still need validation. `DuoDisplay/inspect.js` now
+records both raw and probe UIKit configurations plus the actual CA direction.
+
+## PR #728 integration: CPU and fold posture (2026-10-27)
+
+Source: https://github.com/Lakr233/vphone-cli/pull/728 at
+b03f0b823e7a48bafde6c0eabcafd8acedebcfc0. The initial fixed-inner experiment
+above did not test Apple's `V68VM2025` subtype or
+`SBSTestAutomationService.setDevicePoseOverride`. These are now integrated,
+along with full X1 cache lowering and the accompanying VirtualAudio guard and
+service-profile fixes. The local CSSC kernel fallback is retained.
+
+Pre-update measurements on the existing Duo after about 80 minutes uptime:
+host VM process sampled at 163–181% CPU, guest launchd at 28.3% over 41 seconds.
+`timed` had over 1,400 starts and a 6 MB per-process limit; multiple daemons
+reported JETSAM_REASON_MEMORY_PERPROCESSLIMIT with normal global memory
+pressure. The restart loop is real, but not sufficient to attribute all CPU
+load: the PR identifies launchd's per-process on-demand X1 conversion and its
+private code-page copies as an additional mechanism. Test full cache lowering
+before increasing service ceilings. No Jetsam limit change is deployed here.
+
+Deployment validation on the same guest:
+
+- Installed bundle `2.13.8-local.51658268`; retained the existing CSSC-patched
+  boot chain. A stopped-state APFS clone was saved before the update.
+- The environment update lowered 24,606,071 instructions across 4,508 X1
+  images (4,664 images visited, none skipped), then reattested the cache.
+- About five minutes after boot, two successive five-second host VM samples
+  measured 16.9% and 17.2% CPU. Guest launchd used 0.68% over an earlier
+  59-second interval that included UI/RPC activity. These are short-term
+  measurements, not a long-duration stability result.
+- `timed`, `donotdisturbd`, `powerexceptionsd`, `CommCenter`, and `healthd`
+  each reported one start and never exited. The timed limit remained 6 MB.
+  audiomxd retained its original PID. Home and Settings rendered successfully.
+- `display.posture` accepted open-flat/landscape-left and
+  partially-open/landscape-right requests, but `device.screen` remained
+  466 x 678 at scale 3 with orientation 0. The bounded SpringBoard log capture
+  supplied no pose-application confirmation. RPC success alone does not prove
+  a display transition. Restored closed/portrait after probing.
+- The single outer scanout remains configured; second-display registration
+  and compositor switching are still unresolved. No functional inner-display
+  toggle is claimed by this integration.
+- Full bundle build and signature verification passed; 91 focused firmware
+  tests and 387 daemon logic checks passed. `git diff --check` passed.

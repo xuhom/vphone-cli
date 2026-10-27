@@ -4409,3 +4409,29 @@ stderr/stdin streams, legacy fixed-address NAT reporting, patch catalog and reci
 consistency, plus full bundle/Launchpad builds. Firmware fixture tests still
 require the separately held reference IPSWs; a build or synthetic test is not a
 claim that every newly supported OS has been restored and booted on this host.
+
+### 2026-10-27 — Duo fixed-inner experiment, not shipped
+
+A reversible Preboot device-tree experiment mapped the donor inner panel's
+presentation to the single virtual display and tested both scanout orientations.
+It produced images but did not establish inner-surface registration or correct
+landscape layout. The exact original tree and outer manifest were restored.
+No bundled patch declaration, preset, kernel or shared-cache byte change is
+introduced. See `Guest/iphone_duo_bringup.md` for measurements and limitations;
+the retained guest probe is read-only.
+
+### 2026-10-27 — PR #728 integration for Duo CPU and posture
+
+Integrated upstream PR #728 at b03f0b823e7a48bafde6c0eabcafd8acedebcfc0
+(https://github.com/Lakr233/vphone-cli/pull/728): full X1 shared-cache
+pre-lowering and planner optimizations, VirtualAudio X1 singleton guard,
+foldable VM subtype and pose RPC, and service-profile corrections. The
+existing local kernel CSSC fallback remains unchanged: this host lacks CSSC,
+unlike the PR author's validation host. No broad Jetsam ceiling increase is
+included; the unshipped experiment was retained separately for later comparison.
+
+The cache patch captures undo and re-attests its changed pages. It is selected
+on iOS 27 and excluded from TV/HomePod presets. Foldable subtype is a reversible
+Preboot repair; it does not add a second physical display. Full bundle build,
+91 focused patcher/catalog tests passed before guest deployment. Runtime
+measurements are recorded in Guest/iphone_duo_bringup.md.
