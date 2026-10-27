@@ -73,7 +73,7 @@
 		<string>Block</string>
 		<key>Patches</key>
 		<array>
-			<string>system-setupbackground-exp-pineboard_lookup</string>
+			<string>system-tv-exp-legacy_setup</string>
 			<string>system-homepod-exp-top_cap</string>
 			<string>system-homepod-exp-setup_bypass</string>
 			<string>system-homepod-exp-welcome</string>
@@ -118,7 +118,6 @@
 			<string>system-apps-cfw-attitude</string>
 			<string>system-apps-cfw-signin_sheets</string>
 			<string>system-preferences-cfw-followup_groups</string>
-			<string>system-bluetoothd-cfw-btvc_le_connection</string>
 			<string>system-backboardd-cfw-gyroscope</string>
 			<string>system-backboardd-cfw-accelerometer</string>
 			<string>system-campo-cfw-entitlements</string>

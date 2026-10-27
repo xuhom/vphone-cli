@@ -12,24 +12,26 @@ import VPhonePatchKit
 
 @Suite("Guest patch resolution")
 struct FirmwareGuestPatchResolutionTests {
-    @Test func `TV legacy setup is limited to the 27 point 2 4K preset`() throws {
-        let identifier = FirmwareGuestSystemPatchSet.tvLegacySetup
-        for version in ["26.6", "27.0", "27.1", "27.2", "27.3"] {
-            for preset in FirmwarePatchSetCatalog.builtInPresets {
-                let plan = try VPhonePatchPlan.resolve(
-                    preset: preset, patchSets: FirmwarePatchSetCatalog.bundled,
-                    iOSBase: VPhoneVersion(version), cloudOS: VPhoneVersion("26.4"),
-                )
-                #expect(plan.isEnabled(identifier) == (version == "27.2" && preset.identifier == VPhonePatchPreset.tvOS4KIdentifier))
+    @Test func `native TV setup adapters are limited to the 27 point 2 4K preset`() throws {
+        for identifier in [FirmwareGuestSystemPatchSet.tvSetupDisplayLookup, FirmwareGuestSystemPatchSet.tvSetupFocus, FirmwareGuestSystemPatchSet.tvLocalActivation] {
+            for version in ["26.6", "27.0", "27.1", "27.2", "27.3"] {
+                for preset in FirmwarePatchSetCatalog.builtInPresets {
+                    let plan = try VPhonePatchPlan.resolve(
+                        preset: preset, patchSets: FirmwarePatchSetCatalog.bundled,
+                        iOSBase: VPhoneVersion(version), cloudOS: VPhoneVersion("26.4"),
+                    )
+                    #expect(plan.isEnabled(identifier) == (version == "27.2" && preset.identifier == VPhonePatchPreset.tvOS4KIdentifier))
+                }
             }
+            #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: [identifier], arm64eUserland: true).isEmpty)
+            #expect(FirmwareGuestPatchResolution.unvalidatedHomePodGuestPatches(enabled: [identifier]) == [identifier])
+            #expect(FirmwareGuestPatchResolution.guestPatchesOff(selectionEnabled: []).contains(identifier))
+            #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: [identifier]) == [identifier])
         }
-        #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: [identifier], arm64eUserland: true).isEmpty)
-        #expect(FirmwareGuestPatchResolution.unvalidatedHomePodGuestPatches(enabled: [identifier]) == [identifier])
-        #expect(FirmwareGuestPatchResolution.guestPatchesOff(selectionEnabled: []).contains(identifier))
     }
 
-    @Test func `new TV setup display repair remains opt in`() throws {
-        let identifier = FirmwareGuestSystemPatchSet.tvSetupDisplayLookup
+    @Test func `legacy TV setup is not selected by any preset`() throws {
+        let identifier = FirmwareGuestSystemPatchSet.tvLegacySetup
         for preset in FirmwarePatchSetCatalog.builtInPresets {
             let plan = try VPhonePatchPlan.resolve(
                 preset: preset, patchSets: FirmwarePatchSetCatalog.bundled,
@@ -267,6 +269,19 @@ struct FirmwareGuestPatchResolutionTests {
         #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: selection, arm64eUserland: true).isEmpty)
         // The iOS payloads stay out for both.
         #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: ["dyld-cfw-camera"], arm64eUserland: true) == ["dyld-cfw-camera"])
+    }
+
+    @Test
+    func `only an arm64e TV admits the environment hooks and the launchd patch that loads them`() {
+        let hooks: Set = ["system-launchdaemons-boot-environment", "system-launchd-boot-jetsam_panic_guard_bypass"]
+        #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: hooks, arm64eUserland: true).isEmpty)
+        // Both libraries are arm64e: a plain-arm64 launchd cannot load them.
+        #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: hooks) == hooks.sorted())
+        // The X1 launchd bootstrap shares the load command but stays out.
+        let x1 = FirmwareGuestSystemPatchSet.arm64eX1LaunchdBootstrap
+        #expect(FirmwareGuestPatchResolution.unvalidatedTVGuestPatches(enabled: [x1], arm64eUserland: true) == [x1])
+        // HomePod keeps its own launchd library and no environment.
+        #expect(FirmwareGuestPatchResolution.unvalidatedHomePodGuestPatches(enabled: hooks) == hooks.sorted())
     }
 
     @Test(arguments: ["27.0", "27.2"])

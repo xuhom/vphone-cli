@@ -217,6 +217,12 @@ struct VPhoneCustomFirmwareInstaller {
         if effectiveEnabled.contains(FirmwareGuestSystemPatchSet.tvSetupDisplayLookup), device.family != .appleTV {
             throw ValidationError("The TV setup display-connection patch is supported only for an Apple TV guest.")
         }
+        if effectiveEnabled.contains(FirmwareGuestSystemPatchSet.tvLocalActivation), device.family != .appleTV {
+            throw ValidationError("The TV local-activation patch is supported only for an Apple TV guest.")
+        }
+        if effectiveEnabled.contains(FirmwareGuestSystemPatchSet.tvSetupFocus), device.family != .appleTV {
+            throw ValidationError("The TV setup focus adapter is supported only for an Apple TV guest.")
+        }
         if effectiveEnabled.contains(FirmwareGuestSystemPatchSet.homePodTopCap), device.family != .homePod {
             throw ValidationError("The HomePod top-cap patch is supported only for a HomePod guest.")
         }
@@ -1477,8 +1483,12 @@ struct VPhoneCustomFirmwareInstaller {
         }
         isolate(["system-launchdaemons-boot-environment"]) {
             if on("system-launchdaemons-boot-environment") {
-                try installEnvironment(system: system, environmentOnly: environmentOnly)
+                try installEnvironment(system: system, work: work, guestDevice: guestDevice,
+                                       environmentOnly: environmentOnly)
                 live.insert("system-launchdaemons-boot-environment")
+            } else if guestDevice.family == .appleTV {
+                // Optional on TV, unlike on iOS: take it out again.
+                try removeTVEnvironment(system: system)
             }
         }
         // HomePod deliberately excludes the iPhone environment. Inject only the
@@ -1814,7 +1824,11 @@ struct VPhoneCustomFirmwareInstaller {
         }
 
         machO("system-launchd_cache_loader-boot-unsecure_cache_gate", path: "usr/libexec/launchd_cache_loader", verbs: ["patch-launchd-cache-loader"], codeIdentifier: "com.apple.launchd_cache_loader")
-        machO("system-mobileactivationd-boot-should_hactivate", path: "usr/libexec/mobileactivationd", verbs: ["patch-mobileactivationd"])
+        // The TV declaration has its own 27.2 gate and preset selection; the
+        // implementation and reversible backup are shared with iPhone.
+        let activation = guestDevice.family == .appleTV
+            ? FirmwareGuestSystemPatchSet.tvLocalActivation : "system-mobileactivationd-boot-should_hactivate"
+        machO(activation, path: "usr/libexec/mobileactivationd", verbs: ["patch-mobileactivationd"])
 
         isolate(["system-watchdogd-exp-hv_vmm_cache"]) {
             if on("system-watchdogd-exp-hv_vmm_cache") {
@@ -2055,6 +2069,37 @@ struct VPhoneCustomFirmwareInstaller {
             }
         }
 
+        let tvSetupFocus = FirmwareGuestSystemPatchSet.tvSetupFocus
+        isolate([tvSetupFocus]) {
+            let executable = "Applications/Setup.app/Setup"
+            let library = FirmwareGuestSystemPatchSet.tvSetupFocusLibrary
+            let path = String(library.dropFirst())
+            if on(tvSetupFocus), guestDevice.family == .appleTV,
+               version == "27.2" || version.hasPrefix("27.2.") {
+                let payload = try VPhoneGuestBinaries.resolve((library as NSString).lastPathComponent)
+                try system.replaceFile(path, fromFileAt: payload, mode: 0o755, owner: Self.guestOwner)
+                try installLibraryAlias(system: system, alias: "tf", target: library)
+                try patchMachO(system: system, work: work, path: executable,
+                               preserveEntitlements: true, injectedDylibPath: "/tf")
+                try sealGuestBundle(system: system, bundle: "Applications/Setup.app", preserveEntitlements: true)
+                live.insert(tvSetupFocus)
+            } else {
+                if try revertMachO(system: system, work: work, path: executable, bundle: "Applications/Setup.app", preserveEntitlements: true) {
+                    print("  [+] \(tvSetupFocus): restored Setup from backup")
+                } else if priorGuest.contains(tvSetupFocus) {
+                    live.insert(tvSetupFocus)
+                    throw ValidationError("TV setup focus adapter has no Setup backup; cannot safely remove its library.")
+                }
+                if try system.exists("tf") {
+                    guard try system.readLink("tf") == library else {
+                        throw ValidationError("Another file uses /tf; leaving it intact.")
+                    }
+                    try system.removeItem("tf")
+                }
+                try system.removeItem(path)
+            }
+        }
+
         let tvSetupLookup = FirmwareGuestSystemPatchSet.tvSetupDisplayLookup
         let tvSetupBackground = "Applications/SetupBackground.app/SetupBackground"
         isolate([tvSetupLookup]) {
@@ -2224,6 +2269,7 @@ struct VPhoneCustomFirmwareInstaller {
         work: WorkDirectory,
         path: String,
         bundle: String? = nil,
+        preserveEntitlements: Bool = false,
     ) throws -> Bool {
         let backup = "\(path).bak"
         guard try system.exists(backup) else { return false }
@@ -2233,7 +2279,7 @@ struct VPhoneCustomFirmwareInstaller {
         try system.replaceFile(path, fromFileAt: work.file(name), mode: 0o755, owner: Self.guestOwner)
         try system.removeItem(backup)
         if let bundle {
-            try sealGuestBundle(system: system, bundle: bundle)
+            try sealGuestBundle(system: system, bundle: bundle, preserveEntitlements: preserveEntitlements)
         }
         return true
     }
@@ -2902,25 +2948,75 @@ struct VPhoneCustomFirmwareInstaller {
     /// selected it), and the `/vh` alias is not created — an installed VM
     /// already has it, and an environment update does not add load-command
     /// infrastructure. A full install writes every library and creates `/vh`.
-    private func installEnvironment(system: VPhoneConfinedDirectory, environmentOnly: Bool = false) throws {
-        for name in VPhoneGuestEnvironment.libraries {
+    ///
+    /// An Apple TV takes `VPhoneGuestEnvironment.tvLibraries` alone, marked
+    /// tvOS. No TV guest had an environment before, so the narrow rule does
+    /// not apply there: both libraries and `/vh` are always written.
+    private func installEnvironment(
+        system: VPhoneConfinedDirectory,
+        work: WorkDirectory,
+        guestDevice: VPhoneGuestDevice,
+        environmentOnly: Bool = false,
+    ) throws {
+        let tvOS = guestDevice.family == .appleTV
+        let narrow = environmentOnly && !tvOS
+        for name in tvOS ? VPhoneGuestEnvironment.tvLibraries : VPhoneGuestEnvironment.libraries {
             if VPhoneGuestEnvironment.selectedLibraries.contains(name) {
                 continue
             }
             let path = "usr/lib/\(name)"
-            if environmentOnly, try !system.exists(path) {
+            if narrow, try !system.exists(path) {
                 print("  [·] \(path): not on this VM, left out")
                 continue
             }
-            let source = try VPhoneGuestBinaries.resolve(name)
+            let shipped = try VPhoneGuestBinaries.resolve(name)
+            let source = tvOS ? try tvOSCopy(of: shipped, work: work) : shipped
             try system.replaceFile(path, fromFileAt: source, mode: 0o755, owner: Self.guestOwner)
         }
-        if !environmentOnly {
+        if !narrow {
             // launchd has little free header space for another load command.
             // /vh fits the same 32-byte command as the old /b without reusing it.
             try installLibraryAlias(system: system, alias: "vh", target: "/usr/lib/launchdhook-vphone.dylib")
         }
-        try installMISFixDefaults(system: system)
+        if tvOS {
+            print("  [+] Environment hooks retargeted to tvOS: \(VPhoneGuestEnvironment.tvLibraries.joined(separator: ", "))")
+        } else {
+            try installMISFixDefaults(system: system)
+        }
+    }
+
+    /// A bundle-shipped iOS library, marked tvOS and signed again in the work
+    /// directory. dyld refuses to load a library of another platform, and an
+    /// Apple TV guest's processes, launchd among them, are tvOS.
+    private func tvOSCopy(of source: URL, work: WorkDirectory) throws -> URL {
+        let name = "tvos-\(source.lastPathComponent)"
+        try work.directory.removeItem(name)
+        let staged = work.file(name)
+        var data = try Data(contentsOf: source)
+        try MachOBuildPlatform.set(MachOBuildPlatform.tvOS, in: &data)
+        try data.write(to: staged)
+        try VPhoneSigner.sign(
+            fileAt: staged,
+            options: .init(identifier: nil, entitlements: nil, mergesExisting: true, style: .appleAdHoc),
+        )
+        return staged
+    }
+
+    /// The TV environment's libraries and `/vh`, when the environment is off.
+    /// A launchd still patched to load `/vh` loads nothing: the command is weak.
+    private func removeTVEnvironment(system: VPhoneConfinedDirectory) throws {
+        var removed = false
+        for name in VPhoneGuestEnvironment.tvLibraries where try system.exists("usr/lib/\(name)") {
+            try system.removeItem("usr/lib/\(name)")
+            removed = true
+        }
+        if try system.isSymlink("vh"), try system.readLink("vh") == "/usr/lib/launchdhook-vphone.dylib" {
+            try system.removeItem("vh")
+            removed = true
+        }
+        if removed {
+            print("  [+] system-launchdaemons-boot-environment: removed the TV environment hooks")
+        }
     }
 
     /// The CoreAudio HAL plugin for the VM's virtio sound device. iOS ships
