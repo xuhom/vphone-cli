@@ -23,6 +23,7 @@ static pthread_mutex_t cfx_preview_layers_lock = PTHREAD_MUTEX_INITIALIZER;
 static dispatch_source_t cfx_preview_timer = NULL;
 static IMP cfx_orig_pv_initWithSession = NULL;
 static IMP cfx_orig_pv_initWithSessionMakeConnection = NULL;
+static char cfx_preview_surface_key;
 
 // Adds the layers and returns how many were new.
 static NSUInteger cfx_preview_add_layers(NSArray *layers) {
@@ -74,19 +75,39 @@ static void cfx_pump_preview_once(void) {
            (unsigned long)layers.count);
   });
   dispatch_async(dispatch_get_main_queue(), ^{
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     for (CALayer *layer in layers) {
-      layer.contents = (__bridge id)img;
+      // AVFoundation owns the preview layer's backing store. A normal child
+      // layer keeps our fallback image separate from its empty camera surface.
+      CALayer *surface = objc_getAssociatedObject(layer, &cfx_preview_surface_key);
+      if (!surface) {
+        surface = [CALayer layer];
+        surface.name = @"com.vphone.camfix.preview";
+        surface.zPosition = 1;
+        objc_setAssociatedObject(layer, &cfx_preview_surface_key, surface,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [layer addSublayer:surface];
+        cfxlog(@"[preview] surface parent=%@ bounds=(%g,%g,%g,%g) hidden=%d opacity=%g super=%@",
+               NSStringFromClass(layer.class), layer.bounds.origin.x, layer.bounds.origin.y,
+               layer.bounds.size.width, layer.bounds.size.height,
+               layer.hidden, layer.opacity, NSStringFromClass(layer.superlayer.class));
+      }
+      surface.frame = layer.bounds;
+      surface.contents = (__bridge id)img;
       // Center-crop the landscape source into the portrait preview,
       // filling its height without stretching the image.
-      layer.contentsGravity = kCAGravityResizeAspectFill;
-      layer.contentsRect = CGRectMake(0, 0, 1, 1);
+      surface.contentsGravity = kCAGravityResizeAspectFill;
+      surface.contentsRect = CGRectMake(0, 0, 1, 1);
+      surface.masksToBounds = YES;
       const CGFloat black[] = {0, 0, 0, 1};
       CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
       CGColorRef color = CGColorCreate(space, black);
-      layer.backgroundColor = color;
+      surface.backgroundColor = color;
       CGColorRelease(color);
       CGColorSpaceRelease(space);
     }
+    [CATransaction commit];
     CGImageRelease(img);
   });
 }

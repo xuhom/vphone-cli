@@ -1,5 +1,26 @@
 # Virtual camera transport and capture hooks
 
+## Duo preview investigation (2026-10-27, validation pending)
+
+On iOS 27.1 (24A94425), Camera displayed black despite successful synthetic
+source registration, increasing shared-frame counters, and the client logging
+its first frame to two preview layers. The host test pattern also stayed black;
+reading its shared buffer confirmed nonblack BGRA pixels with opaque alpha.
+Relaunching Camera did not recover the preview.
+
+The current candidate draws into a dedicated ordinary CALayer child instead
+of AVCaptureVideoPreviewLayer.contents, separating the fallback image from
+AVFoundation's backing store. It preserves centered aspect fill and disables
+implicit animations while updating the surface bounds. First-use diagnostics
+record the parent layer geometry and visibility.
+
+The full bundle build, host camera-frame checks, and 1,183 frame-geometry
+checks passed. Bundle 2.13.8-local.0925619b was installed and the Duo rebooted,
+but live preview verification was interrupted to publish the code. This is
+an unverified repair candidate, not a confirmed camera fix. Next: start the
+test-pattern source, inspect the new layer diagnostics and screenshot, then
+restore the Mac built-in source and verify moving preview and capture.
+
 ## Runtime boundary
 
 ### Mac built-in camera source (2.10.3)
