@@ -5690,3 +5690,9 @@ acceptance. Build and test receipts are recorded in
 `Host/upstream_merge_2026-10-29.md`. The 120 Hz mode belongs to upstream's
 software inner display and is not a claim of 120 Hz for the fixed hardware
 mode. The prior accepted guest installation is retained until a later install.
+
+Final integration tip: `2a8ee8b06f89698ff1c4e2578a38236e0d11bbf1` adds
+upstream PR #777's stale injected-touch display-UUID recovery. A native
+regression of the actual Backboard routing implementation passes for stale,
+live, blanked and restarted displays, including fixed-inner fallback. This
+runtime-only follow-up adds no firmware patch declaration or security change.

@@ -401,7 +401,14 @@ $(FOLDDISPLAY): $(FOLDDISPLAY_SOURCES) $(FOLDDISPLAY_INPUTS) | $(STAGE)/folddisp
 		-framework Foundation -framework CoreGraphics -Wl,-not_for_dyld_shared_cache
 	@codesign --force --sign - $@
 
-.PHONY: test-gyroscope test-accelerometer test-hinge test-fold-display-mode
+.PHONY: test-gyroscope test-accelerometer test-hinge test-fold-display-mode test-fold-injected-touch
+test-fold-injected-touch:
+	@mkdir -p $(OUT)
+	xcrun --sdk macosx clang -fobjc-arc -Wall -Wextra -Werror -Wno-unused-parameter \
+		-o $(OUT)/FoldInjectedTouchTests Tests/FoldInjectedTouchTests.m FoldDisplay/FoldDisplaySupport.m \
+		-framework Foundation -framework CoreGraphics
+	@$(OUT)/FoldInjectedTouchTests
+
 test-fold-display-mode:
 	@mkdir -p $(OUT)
 	xcrun --sdk macosx clang -fobjc-arc -Wall -Wextra -Werror \

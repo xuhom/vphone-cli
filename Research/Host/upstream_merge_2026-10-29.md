@@ -2,8 +2,8 @@
 
 Local baseline: `8041f2cc71f4b7c575c4a5cfbfc94bb09b8fce28`.
 Upstream baseline previously merged: `7d633c9a` (2.13.8).
-Upstream main now merged: `56a97c0265a511a13a9ad01f0acfa14d81a44584`.
-There are 85 newly reachable upstream commits, including merge commits;
+Upstream main now merged: `2a8ee8b06f89698ff1c4e2578a38236e0d11bbf1` (PR #777).
+There are 87 newly reachable upstream commits, including merge commits;
 several earlier X1/audio/service changes already existed as local imports.
 Build version: bundle and Launchpad **2.14.1**; VM bundle build 66,
 Launchpad helper build 22 (authorization rule changed).
@@ -14,6 +14,10 @@ Launchpad helper build 22 (authorization rule changed).
   coordination, redraw of the inner display's own frames, retained context
   frames, fold-aware touch routing and rotation, and an inner-display 120 Hz
   digital mode. The upstream patch still labels folding experimental.
+- Duo injected touch: discard a digitizer's stale inner-display UUID after a
+  backboardd restart and route input to the currently live inner display
+  (PR #777, fetched during final verification). Explicit live display IDs are
+  retained, and blanked/fixed-inner cases fall back to their existing route.
 - Tap to wake: a touch on a dark screen lights the Lock Screen; it tries
   SBSUndimScreen before a throttled side-button fallback and does not press Home.
 - iOS 27.1 CIBarcode: lower the standalone CoreImage plug-in's remaining X1
@@ -58,7 +62,7 @@ Developer ID identity is used to sign the new Launchpad artifact.
   staging, signing and bundle admission validation.
 - Xcode VPhoneLaunchpad scheme: passed; Developer ID signing and deep/strict
   signature verification passed.
-- Native tests: fixed/dynamic topology isolation, accelerometer, hinge, sidebar
+- Native tests: fixed/dynamic topology isolation, stale injected-touch recovery, accelerometer, hinge, sidebar
   lifecycle/hit regions, BackBoard touch ABI, FoldGuard and AX orientation passed.
 - vphoned logic tests: 394 checks, zero failures.
 - Launchpad bundle-name/binding, machine-product-type and maintenance-progress
@@ -73,3 +77,10 @@ Existing machines continue using their previously installed bundles.
 
 Build logs: `/tmp/vphone-upstream-merge-20261029-{build,launchpad-build}.log`.
 Test logs: `/tmp/vphone-upstream-merge-20261029-{patcher-tests,patch-model-tests,corekit-tests}.log`.
+
+Final upstream check added PR #777 after the initial 56a97c02 merge; the full
+VPhone bundle was rebuilt against it. A regression includes the actual
+FoldDisplayBackboard implementation and verifies stale UUID recovery, valid
+explicit cover/inner UUIDs, nil input, blanking, a second restart and the
+fixed-inner fallback. Localization values are merged with a JSON equality
+check while preserving the original catalog formatting for review.

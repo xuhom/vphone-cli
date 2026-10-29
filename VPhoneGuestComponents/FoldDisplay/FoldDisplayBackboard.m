@@ -162,8 +162,20 @@ static BOOL vpInnerPanelLit(void) {
     return inner && [[inner valueForKey:@"enabled"] boolValue] && ![[inner valueForKey:@"isBlanked"] boolValue];
 }
 
+// Whether a render display of this backboardd has the UUID. A digitizer can
+// come back from a backboardd restart still bound to an earlier run's inner
+// display, a UUID no display has now: the CoreDevice touchscreen that icli and
+// vphoned inject through did, and every injected touch then hit nothing.
+static BOOL vpLiveDisplayUUID(id uuid) {
+    id server = ((id (*)(id, SEL))objc_msgSend)(objc_getClass("CAWindowServer"), sel_registerName("serverIfRunning"));
+    for (id display in vpReadObject(server, "displays") ?: @[])
+        if ([[display valueForKey:@"uniqueId"] isEqual:uuid]) return YES;
+    return NO;
+}
+
 static id vpInnerDigitizerDisplayUUID(id self, SEL selector, id service) {
     id uuid = ((id (*)(id, SEL, id))vpOriginalDigitizerDisplayUUID)(self, selector, service);
+    if ([uuid length] && !vpLiveDisplayUUID(uuid)) uuid = nil;
     if ([uuid length] || !vpInnerPanelLit()) return uuid;
     id inner = [vpInnerRenderDisplay valueForKey:@"uniqueId"];
     return [inner length] ? inner : uuid;
