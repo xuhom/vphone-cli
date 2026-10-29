@@ -47,6 +47,28 @@ public struct VPhoneDisplayGeometry: Equatable, Sendable {
         )
     }
 
+    /// The active panel occupies the top-leading part of a backing scanout.
+    /// Its pixel ratio is applied to the actual drawn rectangle, so resizing
+    /// the Mac window never mixes guest points with host view coordinates.
+    public init(viewBounds: CGRect, displaySize: CGSize, activeDisplaySize: CGSize, isFlipped: Bool) {
+        self.isFlipped = isFlipped
+        let backing = Self(viewBounds: viewBounds, displaySize: displaySize, isFlipped: isFlipped).displayRect
+        guard displaySize.width > 0, displaySize.height > 0,
+              activeDisplaySize.width > 0, activeDisplaySize.height > 0
+        else {
+            displayRect = backing
+            return
+        }
+        let width = backing.width * min(activeDisplaySize.width / displaySize.width, 1)
+        let height = backing.height * min(activeDisplaySize.height / displaySize.height, 1)
+        displayRect = CGRect(
+            x: backing.minX,
+            y: isFlipped ? backing.minY : backing.maxY - height,
+            width: width,
+            height: height,
+        )
+    }
+
     /// A view point as a 0...1 display position with y down. Points on the
     /// letterbox bars clamp to the nearest display edge.
     ///

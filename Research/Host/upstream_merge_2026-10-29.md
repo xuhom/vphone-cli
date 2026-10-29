@@ -84,3 +84,64 @@ FoldDisplayBackboard implementation and verifies stale UUID recovery, valid
 explicit cover/inner UUIDs, nil input, blanking, a second restart and the
 fixed-inner fallback. Localization values are merged with a JSON equality
 check while preserving the original catalog formatting for review.
+
+## Post-install click regression, 2.14.2 follow-up
+
+The 2.14.1 launch smoke check did not establish host-window click accuracy.
+The owner reported dragging worked but clicking did not. Reproduced on the
+fixed-inner Hom-iPhoneDuo: a Mac click on Settings did nothing, while a direct
+vphoned touch at the displayed Settings position (676,574 screen points) opened
+Preferences and was verified by RunningBoard. CADisplay inventory contained the
+fixed hardware inner display and wireless placeholders, not a duplicate software
+inner display. Thus this failure is in host coordinate conversion, not display
+registration or SpringBoard's empty status-bar canvas.
+
+`display.geometry` reported view bounds 771.706624605678 x 1097 host points but
+an input display rectangle (0,146;669,951). The viewport code divided active
+pixels by the guest scale, then used that fixed guest-point size as host view
+bounds. This shrank/offset the touch target on a resized window. Motion could
+still scroll, but the same coordinates did not hit icons. The pointer path also
+multiplied by backing/active after viewport normalization, applying that ratio
+twice for a cropped panel.
+
+2.14.2 measures the active/backing pixel ratio against the actual aspect-fit
+backing rectangle in host coordinates, with top-leading crop alignment for both
+flipped and unflipped views. Full-panel mode retains the whole drawn rectangle
+at every window scale. Pointer clicks use the same normalization exactly once.
+Regression cases include the measured 1097/951 resize factor, smaller/larger
+windows, flipped axes, letterboxed cropped panels and unavailable active modes.
+Validation: the complete VPhone Xcode scheme and bundle admission passed.
+DisplayGeometryTests and DisplayOrientationTests passed 33 checks in two suites.
+Installed as `2.14.2-local.b1df2401`; after a cold boot, the live input rectangle
+was `(0,0;757.6372239747633,1077)`, matching the actual view bounds. The owner
+confirmed ordinary Mac-window clicks work again. The desktop automation service
+refused mouse actions against the rebuilt bundle (stale-app warning, then a
+timeout); this manual acceptance, not a claimed automation success, establishes
+the click result. Test/build logs are `/tmp/vphone-click-fix-20261029-{tests,build}.log`.
+
+### Final-resolution Duo corners, 2.14.3 follow-up
+
+The owner requested that the inner panel's corner radius use the final render
+mode. The earlier `shortSide * 55 / 626` assumption is superseded for the host
+mask: it enlarged the native 55-point corner to about 58.78 guest points when
+rendering at 669 x 951. The final mode is 2007 x 2853 at 3x, so the native R55
+corresponds to 165 scanout pixels. The mask now multiplies 55 by the ratio of
+the unturned viewport to its final `panelSize` (scanout divided by guest scale).
+At guest-point window size its radius is 55; a half-size window uses 27.5 and
+a double-size window 110. The same path rotates with the viewport and clips
+all four corners transparently. Existing cover hinge edges and other models'
+corner proportions retain their own behavior.
+
+The complete VPhone scheme passed again, including bundle signing and admission
+(`/tmp/vphone-corner-fix-20261029-build.log`).
+Installed `2.14.3-local.3e1279e0` through Launchpad; policy and preflight passed.
+Both Hom-iPhoneDuo and Hom-iPadMini are bound to it with their guest environments
+updated, and it is the default bundle. Duo is running; iPad retains its stopped
+state. The settled host geometry was checked at 0, 180, 270 and 90 degrees:
+all four input rectangles match their drawn view bounds, and the view rotation
+matches each requested orientation. At the current window size the calculated
+corner is about 63.44-63.47 host points (the slight difference comes from window
+frame rounding). The final pose is 90 degrees. Native desktop screenshots could
+not be recaptured because the desktop service timed out; do not count this as
+a fresh visual or mouse acceptance of 2.14.3. It preserves the input implementation
+the owner accepted on 2.14.2.

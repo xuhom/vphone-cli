@@ -540,12 +540,7 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     /// A view point as `input.pointer` takes it: 0...1 of the interface as the
     /// window shows it, from the top-left corner.
     private func interfacePoint(_ localPoint: NSPoint) -> CGPoint {
-var panel = normalizeCoordinate(localPoint)
-        if let active = activePanelPixels, let backing = recordingGraphicsDisplay?.sizeInPixels,
-           active.width > 0, active.height > 0 {
-            panel.x *= backing.width / active.width
-            panel.y *= backing.height / active.height
-        }
+        let panel = normalizeCoordinate(localPoint)
         let unit = CGSize(width: 1, height: 1)
         let screen = screenOrientation.screenPoint(fromPanel: CGPoint(x: panel.x, y: 1 - panel.y), panel: unit)
         return CGPoint(x: min(max(screen.x, 0), 1), y: min(max(1 - screen.y, 0), 1))
@@ -1196,37 +1191,15 @@ var panel = normalizeCoordinate(localPoint)
     /// The guest display as drawn in this view. Full screen letterboxes it,
     /// so touches are measured against it rather than `bounds`.
     private var displayGeometry: VPhoneDisplayGeometry {
-        VPhoneDisplayGeometry(
-            viewBounds: touchViewportBounds,
-            displaySize: touchViewportSize,
-            isFlipped: isFlipped,
-        )
-    }
-
-    /// The visible activity surface inside the fixed backing framebuffer.
-    /// Duo keeps one physical Main/backing surface and clips it to the current
-    /// outer or inner viewport. Input must be measured against that clipped
-    /// rectangle; using the full backing bounds makes outer-screen touches
-    /// land in the hidden part of the framebuffer.
-    private var touchViewportSize: CGSize {
-        if let active = activePanelPixels, active.width > 0, active.height > 0,
-           screenScale > 0 {
-            return CGSize(width: active.width / screenScale, height: active.height / screenScale)
+        let backing = recordingGraphicsDisplay?.sizeInPixels ?? .zero
+        if let active = activePanelPixels {
+            return VPhoneDisplayGeometry(
+                viewBounds: bounds, displaySize: backing,
+                activeDisplaySize: active, isFlipped: isFlipped,
+            )
         }
-        return bounds.size
-    }
-
-    private var touchViewportBounds: CGRect {
-        let size = touchViewportSize
-        guard size.width > 0, size.height > 0 else { return bounds }
-        // VPhoneDisplayContainerView bottom-aligns the full backing view inside
-        // the clipped viewport, so the active surface occupies the bottom-left
-        // portion of the VM view's local coordinates.
-        return CGRect(
-            x: 0,
-            y: max(0, bounds.height - size.height),
-            width: min(bounds.width, size.width),
-            height: min(bounds.height, size.height),
+        return VPhoneDisplayGeometry(
+            viewBounds: bounds, displaySize: backing, isFlipped: isFlipped,
         )
     }
 

@@ -49,6 +49,41 @@ struct DisplayGeometryTests {
         #expect(geometry.displayRect == Self.fullScreen)
     }
 
+    @Test(arguments: [0.5, 1.0, 1097.0 / 951.0, 2.0], [false, true])
+    func `a resized Duo maps the entire drawn panel at every window scale`(scale: Double, flipped: Bool) {
+        let bounds = CGRect(x: 0, y: 0, width: 669 * scale, height: 951 * scale)
+        let pixels = CGSize(width: 2007, height: 2853)
+        let geometry = VPhoneDisplayGeometry(
+            viewBounds: bounds, displaySize: pixels, activeDisplaySize: pixels, isFlipped: flipped,
+        )
+        #expect(abs(geometry.displayRect.width - bounds.width) < 1e-6)
+        #expect(abs(geometry.displayRect.height - bounds.height) < 1e-6)
+        #expect(abs(geometry.displayRect.minY) < 1e-6)
+        // Use independently calculated host points, not the inverse helper.
+        let point = CGPoint(x: bounds.width * 0.3, y: bounds.height * (flipped ? 0.8 : 0.2))
+        #expect(Self.close(geometry.normalizedPoint(point), CGPoint(x: 0.3, y: 0.8)))
+        #expect(geometry.edge(at: CGPoint(x: bounds.midX, y: bounds.midY)) == .none)
+    }
+
+    @Test(arguments: [false, true])
+    func `a clipped panel uses the same scale and letterbox offset as its backing`(flipped: Bool) {
+        let geometry = VPhoneDisplayGeometry(
+            viewBounds: CGRect(x: 0, y: 0, width: 900, height: 1400),
+            displaySize: CGSize(width: 2000, height: 3000),
+            activeDisplaySize: CGSize(width: 1000, height: 1800), isFlipped: flipped,
+        )
+        #expect(geometry.displayRect == CGRect(x: 0, y: flipped ? 25 : 565, width: 450, height: 810))
+        let middle = CGPoint(x: 225, y: flipped ? 430 : 970)
+        #expect(Self.close(geometry.normalizedPoint(middle), CGPoint(x: 0.5, y: 0.5)))
+    }
+
+    @Test func `an unavailable active panel retains the full backing geometry`() {
+        let actual = VPhoneDisplayGeometry(
+            viewBounds: Self.fullScreen, displaySize: Self.display, activeDisplaySize: .zero, isFlipped: false,
+        )
+        #expect(actual == Self.geometry(Self.fullScreen))
+    }
+
     // MARK: - Normalizing
 
     @Test func `full screen display edges normalize to 0 and 1`() {

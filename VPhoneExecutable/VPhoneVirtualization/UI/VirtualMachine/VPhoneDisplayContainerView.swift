@@ -345,12 +345,19 @@ final class VPhoneDisplayContainerView: NSView {
         }
         // iPad panels have much tighter physical corners than iPhone panels.
         // Use a proportional approximation so the outline scales with the VM.
-        // Duo's display1 has a 55-point corner radius on a 626 x 890 panel.
-        // Keep the physical radius/panel ratio when using a larger render mode
-        // and when the user resizes or rotates the window.
-        let radius = isDuoInnerDisplay || (isDuoGuest && !isDuoCoverDisplay)
-            ? min(rect.width, rect.height) * (55.0 / 626.0)
-            : min(rect.width, rect.height) * (isPadGuest ? 0.035 : 0.12)
+        let radius: CGFloat
+        if isDuoInnerDisplay || (isDuoGuest && !isDuoCoverDisplay),
+           panelSize.width > 0, panelSize.height > 0 {
+            // display1's native corner is 55 guest points (165 pixels at 3x).
+            // panelSize comes from the final scanout / guest scale: fixed-inner
+            // currently renders 2007 x 2853, or 669 x 951 points. Scaling from
+            // the old 626-point donor width instead would enlarge the corner.
+            // Both sizes are unturned, so one uniform scale works in all poses.
+            let scale = min(rect.width / panelSize.width, rect.height / panelSize.height)
+            radius = min(55 * scale, min(rect.width, rect.height) / 2)
+        } else {
+            radius = min(rect.width, rect.height) * (isPadGuest ? 0.035 : 0.12)
+        }
         let origin = viewportView.convert(rect.origin, to: self)
         let xAxis = viewportView.convert(NSPoint(x: rect.minX + 1, y: rect.minY), to: self)
         let yAxis = viewportView.convert(NSPoint(x: rect.minX, y: rect.minY + 1), to: self)
