@@ -582,6 +582,9 @@ struct VPhoneCustomFirmwareInstaller {
         }
         if !Self.isFoldable(device) {
             notApplicableGuest.insert(FirmwareGuestSystemPatchSet.prebootFoldableVMSubtype)
+            notApplicableGuest.insert(FirmwareGuestSystemPatchSet.prebootFoldableProductId)
+            notApplicableGuest.insert(FirmwareGuestSystemPatchSet.hinge)
+            notApplicableGuest.insert(FirmwareGuestSystemPatchSet.foldGuard)
         }
         if !device.usesTVOS {
             notApplicableGuest.insert(FirmwareGuestSystemPatchSet.tvTPRO)
@@ -873,7 +876,10 @@ struct VPhoneCustomFirmwareInstaller {
             ?? VPhoneVirtualMachinePatchSelection()
         let plan = readPatchPlan(in: bundleDirectory)
         if let pristine = try firmwareOriginalsKernelcache(in: bundleDirectory),
-           let preset = VPhonePatchPresetStore.preset(named: selection.presetIdentifier),
+           let preset = VPhonePatchPresetStore.preset(
+               named: selection.presetIdentifier,
+               vmCopy: try? bundleDirectory.readData(VPhonePatchPresetStore.vmPresetFileName),
+           ),
            !preset.patchSets.contains(where: {
                if case .external = $0 {
                    true
@@ -1297,6 +1303,8 @@ struct VPhoneCustomFirmwareInstaller {
                     && identifier != FirmwareGuestSystemPatchSet.gyroscope
                     && identifier != FirmwareGuestSystemPatchSet.accelerometer
                     && identifier != FirmwareGuestSystemPatchSet.attitude
+                    && identifier != FirmwareGuestSystemPatchSet.hinge
+                    && identifier != FirmwareGuestSystemPatchSet.foldGuard
             }
             guard plan.isEnabled(identifier) else {
                 print("  [·] \(identifier): off in preset \(plan.presetIdentifier)")
@@ -1426,6 +1434,23 @@ struct VPhoneCustomFirmwareInstaller {
             try requireX1Bootstrap()
         }
 
+        // CIBarcode is a standalone Core Image plug-in, outside the shared cache.
+        // Lower it ahead of time rather than relying on an application's inherited
+        // exception handler to translate these instructions at runtime.
+        // The normal Mach-O path keeps a pristine backup and re-seals the bundle;
+        // deselecting the declaration restores it on the next environment update.
+        if version.hasPrefix("27.1.") || version == "27.1"
+            || priorGuest.contains(FirmwareGuestSystemPatchSet.arm64eX1CIBarcode)
+        {
+            machO(
+                FirmwareGuestSystemPatchSet.arm64eX1CIBarcode,
+                path: FirmwareGuestSystemPatchSet.ciBarcodeExecutablePath,
+                verbs: ["patch-arm64e-x1"],
+                preserveEntitlements: true,
+                bundle: FirmwareGuestSystemPatchSet.ciBarcodeBundlePath,
+            )
+        }
+
         // 0. A cache whose span alone overruns the guest kernel's shared region
         //    maps at no slide, and the guest panics on first boot. Refuse before
         //    the redeploy and the cache patches. A header this check cannot read
@@ -1458,7 +1483,10 @@ struct VPhoneCustomFirmwareInstaller {
         } catch let overflow as DyldSharedCacheMaxSlidePatcher.RegionOverflow {
             throw overflow
         } catch {
-            print("  [!] shared region check skipped: \(error)")
+            // Expected: the preflight looks for the plain arm64e cache file,
+            // and every iOS 27 guest ships a chunked X1 cache the later cache
+            // stage measures directly. Nothing to report.
+            print("  [·] shared region check skipped: the cache is not a plain \(cacheArchitecture) file")
         }
 
         if guestDevice.hasPlainArm64Userland {
@@ -1610,10 +1638,23 @@ struct VPhoneCustomFirmwareInstaller {
             (FirmwareGuestSystemPatchSet.gyroscope, "libvphonegyro.dylib"),
             (FirmwareGuestSystemPatchSet.accelerometer, "libvphoneaccelerometer.dylib"),
             (FirmwareGuestSystemPatchSet.attitude, "libvphoneattitude.dylib"),
+            (FirmwareGuestSystemPatchSet.hinge, "libvphonehinge.dylib"),
+            (FirmwareGuestSystemPatchSet.foldGuard, "libvphonefoldguard.dylib"),
+            (FirmwareGuestSystemPatchSet.foldDisplay, "libvphonefolddisplay.dylib"),
         ] {
             isolate([identifier]) {
                 let path = "usr/lib/" + library
-                if on(identifier) {
+                // The hinge serves a foldable guest's CoreMotion, the guard
+                // exists only beside the foldable identity, and the display
+                // pad answers the fold layouts' two-display gate; on any other
+                // guest they would publish hooks nobody reads or a no-op that
+                // is not installed at all.
+                let foldOnly = identifier == FirmwareGuestSystemPatchSet.hinge
+                    || identifier == FirmwareGuestSystemPatchSet.foldGuard
+                    || identifier == FirmwareGuestSystemPatchSet.foldDisplay
+                let wanted = on(identifier)
+                    && (!foldOnly || Self.isFoldable(guestDevice))
+                if wanted {
                     try system.replaceFile(path, fromFileAt: VPhoneGuestBinaries.resolve(library),
                                            mode: 0o755, owner: Self.guestOwner)
                     live.insert(identifier)
@@ -2332,7 +2373,10 @@ struct VPhoneCustomFirmwareInstaller {
             .flatMap { try? PropertyListDecoder().decode(VPhoneVirtualMachinePatchSelection.self, from: $0) }
             ?? VPhoneVirtualMachinePatchSelection()
         guard
-            let preset = VPhonePatchPresetStore.preset(named: plan.presetIdentifier),
+            let preset = VPhonePatchPresetStore.preset(
+                named: plan.presetIdentifier,
+                vmCopy: try? bundleDirectory.readData(VPhonePatchPresetStore.vmPresetFileName),
+            ),
             let resolved = try? VPhonePatchPlan.resolve(
                 preset: preset,
                 patchSets: FirmwarePatchSetCatalog.bundled,
@@ -3240,7 +3284,14 @@ struct VPhoneCustomFirmwareInstaller {
                                 boardDeviceTree.map { [$0.path] } ?? []))
         }
         if Self.isFoldable(guestDevice) {
+            // Keep the repair in the inverse composition even with no donor
+            // when it is off: restoring the clean backup needs no source tree.
+            if enabled(FirmwareGuestSystemPatchSet.prebootFoldableProductId), boardDeviceTree == nil {
+                throw ValidationError("Foldable product identity needs the board's own device tree.")
+            }
             repairGroup.append((FirmwareGuestSystemPatchSet.prebootFoldableVMSubtype, "patch-dt-foldable-vm-subtype", []))
+            repairGroup.append((FirmwareGuestSystemPatchSet.prebootFoldableProductId, "patch-dt-foldable-product-id",
+                                boardDeviceTree.map { [$0.path] } ?? []))
         }
         repairGroup.append((FirmwareGuestSystemPatchSet.prebootHaptics, "patch-dt-haptics", []))
         repairGroup.append((FirmwareGuestSystemPatchSet.prebootMicrophoneArray, "patch-dt-microphone-array", []))

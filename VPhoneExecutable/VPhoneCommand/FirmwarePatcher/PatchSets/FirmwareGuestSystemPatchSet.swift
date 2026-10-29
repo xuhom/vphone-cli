@@ -28,6 +28,9 @@ public enum FirmwareGuestSystemPatchSet {
     public static let metalCacheReuseMarker = "/usr/lib/vphone-metal-cache-reuse"
     public static let gyroscope = "system-backboardd-cfw-gyroscope"
     public static let accelerometer = "system-backboardd-cfw-accelerometer"
+    public static let hinge = "system-backboardd-cfw-hinge"
+    public static let foldGuard = "system-springboard-cfw-fold_guard"
+    public static let foldDisplay = "system-springboard-cfw-fold_display"
     public static let attitude = "system-apps-cfw-attitude"
     public static let followUpGroups = "system-preferences-cfw-followup_groups"
     public static let signInSheets = "system-apps-cfw-signin_sheets"
@@ -37,6 +40,9 @@ public enum FirmwareGuestSystemPatchSet {
     public static let arm64eX1LaunchdBootstrap = "system-launchd-boot-arm64e_x1_bootstrap"
     public static let arm64eX1FsckBootstrap = "system-fsck-boot-arm64e_x1_bootstrap"
     public static let arm64eX1MountBootstrap = "system-mount-boot-arm64e_x1_bootstrap"
+    public static let arm64eX1CIBarcode = "system-cibarcode-cfw-arm64e_x1"
+    public static let ciBarcodeBundlePath = "System/Library/CoreImage/CIBarcode.cifilter"
+    public static let ciBarcodeExecutablePath = ciBarcodeBundlePath + "/CIBarcode"
 
     public static let paravirtGPUIndexOffset = "system-paravirt_gpu-cfw-heap_index_offset"
     public static let paravirtGPUDriverPath =
@@ -310,6 +316,17 @@ public enum FirmwareGuestSystemPatchSet {
                 applicability: ios27,
                 bootEssential: true,
             ),
+            VPhonePatchDeclaration(
+                identifier: arm64eX1CIBarcode,
+                title: "ARM64E_X1 barcode filters",
+                summary: """
+                Lowers the standalone CIBarcode plug-in before apps load its barcode filters. \
+                This image is outside the shared cache, so whole-cache lowering cannot prevent \
+                its remaining X1 instruction faults.
+                """,
+                target: .guestExecutable(path: "/" + ciBarcodeExecutablePath),
+                applicability: VPhonePatchApplicability(iOSBase: .release(major: 27, minor: 1)),
+            ),
 
             VPhonePatchDeclaration(
                 identifier: "system-seputil-boot-gigalocker_uuid",
@@ -501,6 +518,55 @@ public enum FirmwareGuestSystemPatchSet {
             ),
 
             VPhonePatchDeclaration(
+                identifier: hinge,
+                title: "Virtual hinge angle sensor",
+                summary: """
+                Installs libvphonehinge.dylib, loaded by SystemHook into backboardd. Publishes the \
+                foldable's virtual hinge HID service (usage page 0xFF0C, usage 0x21) and reports \
+                the hinge angle chosen by display.posture, so CoreMotion's angle manager — and \
+                through it CoreDevice's hingeAngle stream — reads the fold state instead of \
+                finding no sensor. With the foldable product identity patch, which is what makes \
+                CoreMotion look for the service. Foldable guests only.
+                """,
+                target: .guestFile(path: "/usr/lib/libvphonehinge.dylib"),
+                applicability: VPhonePatchApplicability(iOSBase: .atLeast(major: 18, minor: 0)),
+            ),
+
+            VPhonePatchDeclaration(
+                identifier: foldGuard,
+                title: "Foldable secure-indicator guard",
+                summary: """
+                Installs libvphonefoldguard.dylib, loaded by SystemHook into SpringBoard. With \
+                the foldable product identity, SpringBoard's first CA transaction reaches \
+                CASecureIndicatorLayer, which raises about indicator geometry a single-display \
+                guest cannot supply — the raise crash-loops SpringBoard into device-recovery \
+                (SIGABRT, measured twice on 27.1 24A94425). The guard catches that one exception \
+                and answers no layer copy, so the system app boots with the Duo identity and its \
+                fold layouts; the secure indicator is the casualty. Inert on any guest without \
+                the identity. Foldable guests only.
+                """,
+                target: .guestFile(path: "/usr/lib/libvphonefoldguard.dylib"),
+                applicability: VPhonePatchApplicability(iOSBase: .major(27)),
+            ),
+
+            VPhonePatchDeclaration(
+                identifier: foldDisplay,
+                title: "Foldable inner display",
+                summary: """
+                Installs libvphonefolddisplay.dylib, loaded by SystemHook into backboardd and \
+                SpringBoard. A real iPhone Duo drives two panels: the cover is Main and the \
+                inner panel a second built-in, always-connected landscape display. backboardd \
+                publishes the inner panel as a software render display with the device tree's \
+                surface types and routes the one digitizer to whichever panel is lit; SpringBoard \
+                classifies it as built-in, resolves the fold postures for both displays natively \
+                and composites the inner display onto the guest's single panel while open. \
+                Experimental. Acts only on iPhone19,4.
+                """,
+                target: .guestFile(path: "/usr/lib/libvphonefolddisplay.dylib"),
+                applicability: VPhonePatchApplicability(iOSBase: .major(27)),
+            ),
+
+            VPhonePatchDeclaration(
                 identifier: attitude,
                 title: "Device attitude simulation",
                 summary: "Installs libvphoneattitude.dylib, loaded by SystemHook into apps outside system UI services such as SpringBoard. Supplies a stationary Core Motion pose configured through vphoned, with polling and callback updates in the arbitrary vertical reference frame. Disabling simulation restores native motion; removing the library reverts the hook on app relaunch.",
@@ -669,6 +735,21 @@ public enum FirmwareGuestSystemPatchSet {
                 target: .prebootDeviceTree,
             ),
             VPhonePatchDeclaration(
+                identifier: prebootFoldableProductId,
+                title: "Foldable product identity",
+                summary: """
+                Research only, off in every preset. Replaces /product/product-id in a foldable \
+                guest's restored Preboot device tree with the board's own token, taken from the \
+                Duo's DeviceTree.v68ap. Measured on duotest-m5 (27.1, 24A94425): with the Duo \
+                token and one display, SpringBoard crash-loops and launchd reboots the guest into \
+                device-recovery — the Duo branches the token opens expect the second panel. \
+                CoreMotion's hinge capability therefore needs a narrower route than the device-tree \
+                token; Apple's Duo simulator satisfies it by registering two displays in its device \
+                type, not by the token alone.
+                """,
+                target: .prebootDeviceTree,
+            ),
+            VPhonePatchDeclaration(
                 identifier: prebootHaptics,
                 title: "Haptics node",
                 summary: """
@@ -770,6 +851,7 @@ public enum FirmwareGuestSystemPatchSet {
     /// Apple's VM sub-type for a foldable board in the restored Preboot
     /// device tree.
     public static let prebootFoldableVMSubtype = "preboot-cfw-devicetree_foldable_vm_subtype"
+    public static let prebootFoldableProductId = "preboot-exp-devicetree_foldable_product_id"
 
     /// The haptics node removal in the restored Preboot device tree, for any
     /// VM patched before `fw patch` removed it from every guest's tree.

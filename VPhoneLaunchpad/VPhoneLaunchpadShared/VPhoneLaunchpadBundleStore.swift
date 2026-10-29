@@ -71,9 +71,8 @@ nonisolated struct VPhoneLaunchpadBundleReceipt: Codable, Equatable, Sendable {
 /// must not trust the app.
 nonisolated enum VPhoneLaunchpadNames {
     /// Minimum bundle version for Launchpad's CLI and receipt contract.
-    /// Keep existing 2.13.8 machines usable. The 2.14 Duo startup selector
-    /// separately probes its machine's CLI before using --duo-display.
-    private static let minimumBundleComponents = (2, 13, 8)
+    /// Series 2.14: `--preset` takes the path of a preset plist.
+    private static let minimumBundleComponents = (2, 14, 0)
     static let minimumBundleVersion =
         "\(minimumBundleComponents.0).\(minimumBundleComponents.1).\(minimumBundleComponents.2)"
 

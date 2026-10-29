@@ -24,11 +24,16 @@ final class VPhoneDisplayContainerView: NSView {
     var isDuoInnerDisplay = false {
         didSet { needsLayout = true }
     }
+    var isDuoCoverDisplay = true {
+        didSet { needsLayout = true }
+    }
     var hasRoundedScreen: Bool { isPhoneGuest || isPadGuest }
     private let phoneOverlay = CAShapeLayer()
     private let screenMask = CAShapeLayer()
     /// Approximately 3 mm in AppKit points, independent of the guest's scale.
     var titlebarGap: CGFloat { hasRoundedScreen ? 3 * 72 / 25.4 : 0 }
+    private let viewportView = NSView()
+    var backingPanelSize: NSSize = .zero { didSet { needsLayout = true } }
     /// The guest panel's size in points, portrait.
     var panelSize: NSSize = .zero {
         didSet { needsLayout = true }
@@ -59,8 +64,11 @@ final class VPhoneDisplayContainerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         displayView.autoresizingMask = []
-        addSubview(displayView)
-        // A layer adds no hit-test target: guest input keeps its existing mapping.
+        viewportView.wantsLayer = true
+        viewportView.layer?.masksToBounds = true
+        addSubview(viewportView)
+        viewportView.addSubview(displayView)
+        installFoldChrome()
         displayView.wantsLayer = true
         phoneOverlay.fillColor = NSColor.black.cgColor
         phoneOverlay.zPosition = 1
@@ -98,24 +106,32 @@ final class VPhoneDisplayContainerView: NSView {
     }
 
     @objc private func step(_ link: CADisplayLink) {
-        guard let turn else {
+        let now = link.targetTimestamp
+        let turning = stepTurn(now: now)
+        let folding = stepFold(now: now)
+        guard turning || folding else {
             stopDisplayLink()
             return
         }
-        let progress = (link.targetTimestamp - turn.start) / Self.turnDuration
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
+    /// Advances the running turn; returns whether one is still running.
+    private func stepTurn(now: CFTimeInterval) -> Bool {
+        guard let turn else { return false }
+        let progress = (now - turn.start) / Self.turnDuration
         guard progress < 1 else {
             self.turn = nil
-            stopDisplayLink()
             finishTurn(angle: turn.toAngle, windowFrame: turn.toFrame)
-            return
+            return false
         }
         let eased = CGFloat(VPhoneDisplayOrientation.easedProgress(progress))
         angle = turn.fromAngle + (turn.toAngle - turn.fromAngle) * eased
         if let from = turn.fromFrame, let to = turn.toFrame, let window {
             window.setFrame(Self.interpolate(from, to, eased), display: false)
         }
-        needsLayout = true
-        layoutSubtreeIfNeeded()
+        return true
     }
 
     private func finishTurn(angle target: CGFloat, windowFrame: NSRect?) {
@@ -144,6 +160,99 @@ final class VPhoneDisplayContainerView: NSView {
         )
     }
 
+    // MARK: - Folding
+
+    /// The fold chrome a foldable guest drives through `display.posture`:
+    /// the spine swallowing the screen. The guest's pixels are never scaled
+    /// — a single-display guest has no second layout to switch to, and a
+    /// host-side squeeze would read as a squashed wallpaper, not a fold.
+    /// Instead an opaque spine band grows from the center by exactly the
+    /// width a hinge at angle θ would hide from the viewer,
+    /// 1 − cos((180−θ)/2): 180° leaves the panel untouched, 100° covers the
+    /// middle ~23% (each visible half keeps its native scale, like a book's
+    /// angled pages), and 0° closes the band over everything. Touches keep
+    /// mapping through the band to the untouched panel underneath.
+    private var foldAngle: CGFloat = 180
+    private var fold: Fold?
+    private let creaseLayer = CAGradientLayer()
+    private static let foldDurationFallback: CFTimeInterval = 1.2
+
+    private struct Fold {
+        let fromAngle: CGFloat
+        let toAngle: CGFloat
+        let start: CFTimeInterval
+        let duration: CFTimeInterval
+    }
+
+    private func installFoldChrome() {
+        creaseLayer.frame = .zero
+        creaseLayer.startPoint = CGPoint(x: 0, y: 0.5)
+        creaseLayer.endPoint = CGPoint(x: 1, y: 0.5)
+        // Soft shoulders into an opaque core, so the band reads as a fold
+        // shadow rather than a rectangle.
+        creaseLayer.colors = [
+            NSColor.black.withAlphaComponent(0).cgColor,
+            NSColor.black.withAlphaComponent(0.97).cgColor,
+            NSColor.black.cgColor,
+            NSColor.black.withAlphaComponent(0.97).cgColor,
+            NSColor.black.withAlphaComponent(0).cgColor,
+        ]
+        creaseLayer.locations = [0, 0.3, 0.5, 0.7, 1]
+        creaseLayer.opacity = 0
+        layer?.addSublayer(creaseLayer)
+    }
+
+    /// The fraction of the panel's width a hinge at `angle` hides from the
+    /// viewer: one minus the cosine of each half's tilt.
+    private static func hiddenFraction(for angle: CGFloat) -> CGFloat {
+        let tilt = (180 - angle) * .pi / 180 / 2
+        return 1 - max(cos(tilt), 0)
+    }
+
+    /// Folds the chrome to `angle` (0 closed … 180 open) over `duration`
+    /// seconds, in step with the guest's own sweep.
+    func setFold(angle: Double, duration: Double) {
+        let target = CGFloat(min(max(angle, 0), 180))
+        let seconds = duration > 0 ? duration : Self.foldDurationFallback
+        guard window?.isVisible == true, seconds >= 0.15 else {
+            foldAngle = target
+            fold = nil
+            applyFold()
+            return
+        }
+        fold = Fold(
+            fromAngle: foldAngle,
+            toAngle: target,
+            start: CACurrentMediaTime(),
+            duration: seconds,
+        )
+        if displayLink == nil {
+            let link = displayLink(target: self, selector: #selector(step(_:)))
+            link.add(to: .main, forMode: .common)
+            displayLink = link
+        }
+    }
+
+    /// Draws the current `foldAngle`: grow or shrink the spine band. The
+    /// panel itself is never transformed.
+    private func applyFold() {
+        creaseLayer.opacity = foldAngle < 179.5 ? 1 : 0
+        needsLayout = true
+    }
+
+    private func stepFold(now: CFTimeInterval) -> Bool {
+        guard let fold else { return false }
+        let progress = min(max((now - fold.start) / fold.duration, 0), 1)
+        let eased = CGFloat(VPhoneDisplayOrientation.easedProgress(progress))
+        foldAngle = fold.fromAngle + (fold.toAngle - fold.fromAngle) * eased
+        applyFold()
+        if progress >= 1 {
+            self.fold = nil
+            return false
+        }
+        return true
+    }
+
     // MARK: - Layout
 
     override func layout() {
@@ -155,14 +264,38 @@ final class VPhoneDisplayContainerView: NSView {
             ? VPhoneDisplayOrientation.fittedSize(panel: panelSize, angle: angle, in: screenBounds.size)
             : screenBounds.size
         // Sized unturned, then turned about its center.
-        displayView.frameCenterRotation = 0
-        displayView.frame = NSRect(
+        viewportView.frameCenterRotation = 0
+        viewportView.frame = NSRect(
             x: screenBounds.midX - size.width / 2,
             y: screenBounds.midY - size.height / 2,
             width: size.width,
             height: size.height,
         )
-        displayView.frameCenterRotation = angle
+        let backing = backingPanelSize.width > 0 ? backingPanelSize : panelSize
+        let scale = panelSize.width > 0 ? size.width / panelSize.width : 1
+        let full = NSSize(width: backing.width * scale, height: backing.height * scale)
+        displayView.frameCenterRotation = 0
+        displayView.frame = NSRect(x: 0, y: size.height - full.height, width: full.width, height: full.height)
+        viewportView.frameCenterRotation = angle
+        if let vmView = displayView as? VPhoneVirtualMachineView {
+            vmView.enclosingDisplayRotation = angle
+            vmView.activePanelPixels = NSSize(width: panelSize.width * vmView.screenScale,
+                                               height: panelSize.height * vmView.screenScale)
+        }
+        // The spine band hides the folded fraction of the panel and turns
+        // with it: laid out in the panel's unturned space, then rotated
+        // about the shared center, exactly as the panel is.
+        let hidden = Self.hiddenFraction(for: foldAngle)
+        let bandWidth = viewportView.frame.width * hidden
+        // Animate the frame along the angle steps; keep a hairline floor so
+        // the band never flickers between zero-width and the soft shoulder.
+        creaseLayer.frame = NSRect(
+            x: viewportView.frame.midX - max(bandWidth, 1) / 2,
+            y: viewportView.frame.minY,
+            width: max(bandWidth, 1),
+            height: viewportView.frame.height,
+        )
+        creaseLayer.transform = CATransform3DMakeRotation(angle * .pi / 180, 0, 0, 1)
         updatePhoneOverlay()
     }
 
@@ -205,7 +338,7 @@ final class VPhoneDisplayContainerView: NSView {
             layer?.mask = nil
             return
         }
-        let rect = displayView.bounds
+        let rect = viewportView.bounds
         guard rect.width > 0, rect.height > 0 else {
             layer?.mask = nil
             return
@@ -215,19 +348,19 @@ final class VPhoneDisplayContainerView: NSView {
         // Duo's display1 has a 55-point corner radius on a 626 x 890 panel.
         // Keep the physical radius/panel ratio when using a larger render mode
         // and when the user resizes or rotates the window.
-        let radius = isDuoInnerDisplay
+        let radius = isDuoInnerDisplay || (isDuoGuest && !isDuoCoverDisplay)
             ? min(rect.width, rect.height) * (55.0 / 626.0)
             : min(rect.width, rect.height) * (isPadGuest ? 0.035 : 0.12)
-        let origin = displayView.convert(rect.origin, to: self)
-        let xAxis = displayView.convert(NSPoint(x: rect.minX + 1, y: rect.minY), to: self)
-        let yAxis = displayView.convert(NSPoint(x: rect.minX, y: rect.minY + 1), to: self)
+        let origin = viewportView.convert(rect.origin, to: self)
+        let xAxis = viewportView.convert(NSPoint(x: rect.minX + 1, y: rect.minY), to: self)
+        let yAxis = viewportView.convert(NSPoint(x: rect.minX, y: rect.minY + 1), to: self)
         var transform = CGAffineTransform(
             a: xAxis.x - origin.x, b: xAxis.y - origin.y,
             c: yAxis.x - origin.x, d: yAxis.y - origin.y,
             tx: origin.x, ty: origin.y,
         )
         let panel: CGPath
-        if isDuoGuest && !isDuoInnerDisplay {
+        if isDuoGuest && isDuoCoverDisplay {
             // The outer panel meets the hinge on its physical left edge.
             // Build the silhouette in panel coordinates so the straight edge
             // follows that edge when the guest rotates.
