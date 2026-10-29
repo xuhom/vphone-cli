@@ -220,3 +220,26 @@ struct ManifestTests {
         #expect(VPhoneVirtualMachineManifest.fileKind(at: url) == .regularFile)
     }
 }
+
+extension ManifestTests {
+    @Test func `Duo inner startup survives roundtrip and unrelated edits and can revert`() throws {
+        let outer = sampleManifest().updating(guestDevice: .iPhone19_4)
+        #expect(!outer.usesDuoInnerDisplay)
+        let inner = outer.updating(duoDisplayMode: .inner)
+        let data = try PropertyListEncoder().encode(inner)
+        let restored = try PropertyListDecoder().decode(VPhoneVirtualMachineManifest.self, from: data)
+        #expect(restored.usesDuoInnerDisplay)
+        #expect(restored.screenConfig.width == 2007)
+        #expect(restored.screenConfig.height == 2853)
+        let edited = restored.updating(cpuCount: 4).updating(romImages: .default)
+            .updating(guestDevice: .iPhone19_4)
+        #expect(edited.usesDuoInnerDisplay)
+        #expect(edited.screenConfig == inner.screenConfig)
+        let reverted = edited.updating(duoDisplayMode: .outer)
+        #expect(!reverted.usesDuoInnerDisplay)
+        #expect(reverted.screenConfig == outer.screenConfig)
+        let other = inner.updating(guestDevice: .default)
+        #expect(other.duoDisplayMode == nil)
+        #expect(other.screenConfig == VPhoneGuestDevice.default.screen)
+    }
+}

@@ -302,9 +302,18 @@ struct VPhoneVirtualMachineConfigCommand: ParsableCommand {
     @Option(name: .long, help: VPhoneSEPROMOption.help)
     var seprom: String?
 
+    @Option(name: .long, help: "Duo startup display: outer | inner (fixed expanded display, next boot)")
+    var duoDisplay: String?
+
     func run() throws {
         let name = try VPhoneVirtualMachineSelection.resolveExisting(name, in: lib.library)
         let edit = try networkEdit(vmName: name)
+        let duoMode = try duoDisplay.map { value in
+            guard let mode = VPhoneVirtualMachineManifest.DuoDisplayMode(rawValue: value.lowercased()) else {
+                throw ValidationError("--duo-display must be outer or inner")
+            }
+            return mode
+        }
         let unlocks = try unlockAtStartup.map { try Self.parseSwitch($0, option: "--unlock-at-startup") }
         let syncsLocation = try syncHostLocation.map { try Self.parseSwitch($0, option: "--sync-host-location") }
         let updated = try VPhoneBundleOperations.updateConfig(
@@ -315,6 +324,7 @@ struct VPhoneVirtualMachineConfigCommand: ParsableCommand {
             networkEdit: edit,
             unlocksAtStartup: unlocks,
             syncsHostLocation: syncsLocation,
+            duoDisplayMode: duoMode,
         )
         var current = updated
         if let rom {

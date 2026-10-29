@@ -120,6 +120,9 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
         self.control = control
         if !command.dfu {
             control.unlocksAtStartup = vm.unlocksAtStartup
+            if options.isDuoGuest {
+                control.duoStartupDisplay = try VPhoneVirtualMachineManifest.load(from: options.configURL).duoDisplayMode
+            }
             control.syncsGuestEnvironment = !options.isTVGuest && !options.isHomePodGuest
             control.syncsHostLocation = vm.syncsHostLocation
             control.guestDeviceName = Self.guestDeviceName(forConfig: options.configURL)
@@ -180,6 +183,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
                 isPhoneGuest: !options.isPadGuest && !options.isTVGuest && !options.isWatchGuest,
                 isPadGuest: options.isPadGuest,
                 isDuoGuest: options.isDuoGuest,
+                isDuoInnerDisplay: options.isDuoInnerDisplay,
                 hardwareKeyboardEnabled: vm.usesHardwareKeyboard,
                 keySender: keySender,
                 control: control,

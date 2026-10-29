@@ -42,6 +42,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         isPhoneGuest: Bool,
         isPadGuest: Bool,
         isDuoGuest: Bool,
+        isDuoInnerDisplay: Bool,
         hardwareKeyboardEnabled: Bool,
         keySender: VPhoneVirtualMachineKeySender,
         control: VPhoneGuestControl,
@@ -93,6 +94,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             display.isPhoneGuest = isPhoneGuest
             display.isPadGuest = isPadGuest
             display.isDuoGuest = isDuoGuest
+            display.isDuoInnerDisplay = isDuoInnerDisplay
             display.panelSize = windowSize
             displayContainer = display
             homePodDisplayView = nil

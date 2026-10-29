@@ -49,6 +49,11 @@ struct MachineProductTypeTests {
         expect(machine.osName == "iOS" && !machine.isPad, "unknown type reads as iOS")
         machine.guestProductType = VPhoneLaunchpadMachine.guestProductType(in: pad)
         expect(machine.isPad && machine.osName == "iPadOS", "iPad guest")
+        expect(!machine.isDuo, "iPad keeps its ordinary start action")
+        machine.guestProductType = "iPhone19,4"
+        expect(machine.isDuo, "Duo offers inner and outer startup")
+        machine.guestProductType = "iPhone19,3"
+        expect(!machine.isDuo, "other iPhones keep their ordinary start action")
         machine.guestProductType = VPhoneLaunchpadMachine.guestProductType(in: tv)
         expect(machine.isAppleTV && !machine.isPad && machine.osName == "tvOS", "Apple TV guest")
 

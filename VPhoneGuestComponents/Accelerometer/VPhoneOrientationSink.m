@@ -271,15 +271,16 @@ void VPhoneOrientationGateInstall(void) {
     if (method && method_getNumberOfArguments(method) == 3 &&
         class_getInstanceVariable(cls, "_backlightIsOn") &&
         [cls instancesRespondToSelector:sel_registerName("_updateOrientationInputsDeferralAnimated:")]) {
-        vpOriginalSetupPipeline = (void (*)(id, SEL, id))method_setImplementation(method, (IMP)vpOrientationSetupPipeline);
-        return;
+        if (!vpOriginalSetupPipeline)
+            vpOriginalSetupPipeline = (void (*)(id, SEL, id))method_setImplementation(method, (IMP)vpOrientationSetupPipeline);
     }
     Method changed = class_getInstanceMethod(cls, sel_registerName("accelerometer:didChangeDeviceOrientation:"));
     if (changed && method_getNumberOfArguments(changed) == 4 && class_getInstanceVariable(cls, "_backlightIsOn") &&
         [cls instancesRespondToSelector:sel_registerName("_updateOrientationInputsDeferralAnimated:")]) {
-        vpOriginalAccelerometerChanged = (void (*)(id, SEL, id, NSInteger))method_setImplementation(
-            changed, (IMP)vpSpringBoardAccelerometerChanged);
-        return;
+        if (!vpOriginalAccelerometerChanged)
+            vpOriginalAccelerometerChanged = (void (*)(id, SEL, id, NSInteger))method_setImplementation(
+                changed, (IMP)vpSpringBoardAccelerometerChanged);
     }
-    NSLog(@"[vphone-accelerometer] SpringBoard orientation gate API unavailable");
+    if (!vpOriginalSetupPipeline && !vpOriginalAccelerometerChanged)
+        NSLog(@"[vphone-accelerometer] SpringBoard orientation gate API unavailable");
 }

@@ -3,6 +3,7 @@ import Foundation
 // MARK: - Errors
 
 public enum VPhoneManifestError: Error {
+    case duoDisplayRequiresDuo
     case loadFailed(path: String)
     case parseFailed(path: String)
     case unsupportedSchema(path: String, found: Int?)
@@ -17,6 +18,8 @@ public enum VPhoneManifestError: Error {
 extension VPhoneManifestError: CustomStringConvertible, LocalizedError {
     public var description: String {
         switch self {
+        case .duoDisplayRequiresDuo:
+            "--duo-display requires an iPhone Duo guest."
         case let .loadFailed(path):
             "Unable to read the VM configuration at \(path). Check that the file exists and try again."
         case let .parseFailed(path):
@@ -123,6 +126,25 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
 
     /// Screen configuration
     public let screenConfig: ScreenConfig
+
+    /// Fixed startup presentation, not a runtime second display.
+    public enum DuoDisplayMode: String, Codable, Sendable {
+        case outer, inner
+
+        public var screen: ScreenConfig {
+            switch self {
+            case .outer: .init(width: 1398, height: 2034, pixelsPerInch: 460, scale: 3)
+            // iOS 27.1 selects a 669 x 951 logical canvas for this panel.
+            // Match the scanout to it to avoid clipping the 2007 x 2853 render.
+            case .inner: .init(width: 2007, height: 2853, pixelsPerInch: 460, scale: 3)
+            }
+        }
+    }
+
+    public let duoDisplayMode: DuoDisplayMode?
+    public var usesDuoInnerDisplay: Bool {
+        guestDevice.productType == "iPhone19,4" && duoDisplayMode == .inner
+    }
 
     // MARK: - Network
 
@@ -371,6 +393,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         hardwareKeyboardEnabled: Bool? = nil,
         unlocksAtStartup: Bool? = nil,
         syncsHostLocation: Bool? = nil,
+        duoDisplayMode: DuoDisplayMode? = nil,
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.platformType = platformType
@@ -388,6 +411,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         self.hardwareKeyboardEnabled = hardwareKeyboardEnabled
         self.unlocksAtStartup = unlocksAtStartup
         self.syncsHostLocation = syncsHostLocation
+        self.duoDisplayMode = duoDisplayMode
     }
 
     // MARK: - Creation
@@ -557,6 +581,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         hardwareKeyboardEnabled: Bool? = nil,
         unlocksAtStartup: Bool? = nil,
         syncsHostLocation: Bool? = nil,
+        duoDisplayMode: DuoDisplayMode? = nil,
     ) -> VPhoneVirtualMachineManifest {
         VPhoneVirtualMachineManifest(
             platformType: platformType,
@@ -564,7 +589,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             machineIdentifier: machineIdentifier ?? self.machineIdentifier,
             cpuCount: cpuCount ?? self.cpuCount,
             memorySize: memorySize ?? self.memorySize,
-            screenConfig: screenConfig,
+            screenConfig: duoDisplayMode?.screen ?? screenConfig,
             networkConfig: networkConfig ?? self.networkConfig,
             diskImage: diskImage,
             nvramStorage: nvramStorage,
@@ -574,6 +599,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             hardwareKeyboardEnabled: hardwareKeyboardEnabled ?? self.hardwareKeyboardEnabled,
             unlocksAtStartup: unlocksAtStartup ?? self.unlocksAtStartup,
             syncsHostLocation: syncsHostLocation ?? self.syncsHostLocation,
+            duoDisplayMode: duoDisplayMode ?? self.duoDisplayMode,
         )
     }
 
@@ -595,6 +621,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             hardwareKeyboardEnabled: hardwareKeyboardEnabled,
             unlocksAtStartup: unlocksAtStartup,
             syncsHostLocation: syncsHostLocation,
+            duoDisplayMode: duoDisplayMode,
         )
     }
 
@@ -608,7 +635,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             machineIdentifier: machineIdentifier,
             cpuCount: cpuCount,
             memorySize: memorySize,
-            screenConfig: device.screen,
+            screenConfig: device.productType == "iPhone19,4" ? (duoDisplayMode?.screen ?? device.screen) : device.screen,
             networkConfig: networkConfig,
             diskImage: diskImage,
             nvramStorage: nvramStorage,
@@ -618,6 +645,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             hardwareKeyboardEnabled: hardwareKeyboardEnabled,
             unlocksAtStartup: unlocksAtStartup,
             syncsHostLocation: syncsHostLocation,
+            duoDisplayMode: device.productType == "iPhone19,4" ? duoDisplayMode : nil,
         )
     }
 }

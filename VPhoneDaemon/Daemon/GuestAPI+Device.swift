@@ -74,6 +74,9 @@ extension GuestAPI {
             rotationLock.lock()
             defer { rotationLock.unlock() }
             if let orientation = optionalString(params, "orientation") {
+                if vp_duo_inner_display() {
+                    return try setDuoInnerRotation(orientation)
+                }
                 // Preserve the physical pose across SpringBoard relaunches.
                 // CoreMotion's app pose provider cannot feed this HID sink.
                 let accelerometer = vp_accelerometer_get()
@@ -165,6 +168,40 @@ extension GuestAPI {
     }
 
     // MARK: Device pose
+
+    private static func setDuoInnerRotation(_ spec: String) throws -> [String: Any] {
+        let degrees: Int
+        let deviceOrientation: Int32
+        switch spec.lowercased() {
+        case "0", "portrait": (degrees, deviceOrientation) = (0, 3)
+        case "90", "landscape-left", "left": (degrees, deviceOrientation) = (90, 1)
+        case "180", "upside-down", "portrait-upside-down": (degrees, deviceOrientation) = (180, 4)
+        case "270", "landscape-right", "right": (degrees, deviceOrientation) = (270, 2)
+        default: throw GuestAPIError.invalidRequest("unknown rotation: \(spec)")
+        }
+        let previous = interfaceRotationDegrees()
+        guard vp_device_pose_set(deviceOrientation, 3, 0) else {
+            throw GuestAPIError.operationFailed("Duo device pose override is unavailable")
+        }
+        // The inner panel is mounted a quarter-turn from the device's axes.
+        _ = vp_accelerometer_set_orientation(String((degrees + 270) % 360))
+        let deadline = Date().addingTimeInterval(1.5)
+        while interfaceRotationDegrees() != degrees, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard interfaceRotationDegrees() == degrees else {
+            if let previous {
+                let pose: Int32 = previous == 90 ? 1 : (previous == 270 ? 2 : (previous == 180 ? 4 : 3))
+                _ = vp_device_pose_set(pose, 3, 0)
+                _ = vp_accelerometer_set_orientation(String((previous + 270) % 360))
+            }
+            throw GuestAPIError.operationFailed("The foreground scene did not accept the requested Duo rotation")
+        }
+        var result = rotationInfo()
+        result["requested"] = degrees
+        result["accelerometer"] = vp_accelerometer_get()
+        return result
+    }
 
     /// CoreMotion's magic-pose values, by name. SpringBoard derives the hinge
     /// angle from the hinge state with a five-entry table, so the hinge stops

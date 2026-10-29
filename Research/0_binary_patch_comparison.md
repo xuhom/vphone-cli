@@ -4435,3 +4435,111 @@ on iOS 27 and excluded from TV/HomePod presets. Foldable subtype is a reversible
 Preboot repair; it does not add a second physical display. Full bundle build,
 91 focused patcher/catalog tests passed before guest deployment. Runtime
 measurements are recorded in Guest/iphone_duo_bringup.md.
+
+### 2026-10-27 — Duo fixed-inner touch compatibility
+
+No firmware/cache instruction patch added. The existing selected accelerometer
+library now includes a SpringBoard-only compatibility repair for the four
+full-height status-bar view classes observed in the single-scanout Duo expanded
+mode. The host writes an explicit `inner`/`outer` selection; outer-sized screens
+are independently excluded. Native status-bar height is retained. A two-second
+sweep avoids the synchronous relayout loop seen in a rejected experiment.
+See `Guest/iphone_duo_bringup.md` for evidence, rejected alternatives, and the
+remaining distinction between this mode and real display1 registration.
+
+2026-10-27 rotation follow-up: no firmware patch added. The legacy SpringBoard
+orientation gate installer is now idempotent across its delayed retry; native
+regression coverage reproduces the duplicate-install case. The iOS 27 Duo
+landscape experiments were runtime-only and reverted after scene-layout
+validation failed; see `Guest/iphone_duo_bringup.md`.
+
+2026-10-27 framebuffer UUID experiment (not a released patch): add the donor
+V68 product/display0 and display1 metadata to the current virtual DeviceTree,
+retaining framebuffer identifiers and logical display indexes but removing
+physical phandles. Keep the original root product-id and all personalization
+records. Pair display1's BF0DC480-5EE2-4EC1-B02B-C75E94759832 identifier with
+VZMacGraphicsDisplayConfiguration._setDisplayIdentifier for fixed inner mode.
+The exact previous Preboot IMG4 is saved before testing; this experiment must
+be reverted if native identity, layout and input validation fail.
+
+2026-10-27 fixed-inner follow-up: the donor product-id/DeviceTree experiments
+were reverted; the exact original Preboot IMG4 remains installed. Current
+source probes are guest-runtime compatibility hooks, not new firmware binary
+patches: SBFDisplayContentModeResolver classifies the single explicit display1
+scanout as inner and releases its two-panel readiness gate; vphoned reads
+CADisplay orientation instead of stale AX cover orientation. Input validation
+then exposed BackBoard's unresolved nil display UUID. A scoped
+BKDisplayController nil-to-inner mapping is compiled and unit-tested, with
+real guest validation pending bundle installation. See
+`Guest/iphone_duo_bringup.md` for rejected status-bar/association experiments
+and the remaining acceptance checks.
+
+Fixed Duo inner follow-up (2026-10-28): the runtime-only BackBoard repair now
+covers nil-display geometry, coordinate, target, embedded-host and transform
+queries; ABI/argument tests pass. Synthetic per-panel pose fields and the inner
+mount rotation map allow all four display rotations. Native sidebar/status-window
+orientation and full-canvas input are still under validation; do not describe
+these diagnostic probes as an accepted fix. No DeviceTree donor or host security
+change is part of this work. See Guest/iphone_duo_bringup.md.
+
+2026-10-28 acceptance update: the native Axis provider's cached instance repair
+and fixed-inner status-window transform delivered exact application touches at
+UI 0/90/180/270 in a live probe. Application sidebars rendered upright at the
+upper right. Home's live native wrapper reparenting remains unverified in
+2.14.0-local.67db9b49, which awaits Launchpad administrator installation. No
+firmware patch was added; temporary status probes still need consolidation.
+
+### Duo Home wallpaper compatibility follow-up (2026-10-28)
+
+The local fixed-inner guest component replaces unsuccessful wallpaper rotation
+diagnostics with a Home-only native snapshot background. It is restricted to
+the inner hardware UUID and SpringBoard; kernel, DSC and DeviceTree patches
+are unchanged. The system-selected Home image is presented in Home's existing
+oriented coordinate space. Lock Screen native wallpaper remains unresolved.
+Bundle `2.14.0-local.22383718` passed a fixed-inner cold start and live Home
+wallpaper checks at UI 0/90/180/270, including native taps opening Settings in
+each orientation and return-to-Home checks. This validates a static snapshot
+fallback, not native live PosterBoard rotation. See `Guest/iphone_duo_bringup.md`
+for evidence and the remaining validation limits.
+
+2026-10-29 status transition follow-up: the fixed-inner sidebar now configures
+native app bars at their owner factory/layout callbacks and suppresses only the
+legacy global wrapper synchronously. Previously both waited for a one-second
+poll, allowing a temporary top bar during app opening. Lifecycle/visibility and
+hit-region tests pass; live acceptance is pending. No firmware patch changed.
+
+The first lifecycle build b704559b failed Home rotation acceptance despite
+upright application sidebars. The follow-up excludes the associated custom
+Home owner, preserving its existing window-coordinated rotation. Full build
+and custom-Home pass-through regression passed; installation awaits the owner's
+administrator verification. The accepted default remains 22383718.
+
+2026-10-29 sidebar transition follow-up: 49d5f719 restored the Home sidebar
+but did not eliminate the application top-bar flash (16-frame native-window
+capture). Retained SpringBoard hierarchy identifies the missed bar under
+SBDeviceApplicationSceneView / orientation wrapper / SBFTouchPassThroughView,
+using DynamicSplitSmallIsland, outside the previously hooked layout owner.
+Replace those ineffective hooks with exact-inner, app-scene-ancestry-scoped
+STUIStatusBar_Wrapper attachment/layout preparation, using the scene's own
+orientation. Preserve Home/Lock and native visibility. Revised lifecycle tests
+cover this observed ancestry and reuse; live validation remains pending.
+No kernel/DeviceTree/firmware patch-set change. Default remains 22383718.
+
+Correction after 738cab88 live validation: app scene and status-bar orientation
+wrapper are siblings (both hierarchy depth 19), not ancestor/descendant.
+The scene-ancestry gate failed to match, and the flash persists. Gate wrapper
+attachment/layout by its observed SBMainSwitcherWindow instead, with the
+wrapper's own content orientation. The regression fixture now models the actual
+sibling branches and passes. No first-frame success is claimed for 738cab88.
+
+2026-10-29 live acceptance: `2.14.0-local.4d04cb46` uses the corrected
+SBMainSwitcherWindow gate and wrapper-local orientation. Cold and warm Settings
+launch sequences no longer show the ordinary top status bar in the inspected
+native-window samples; the circular-battery sidebar appears directly. All four
+UI rotations passed settled sidebar/window geometry, actual touch navigation,
+and Home wallpaper/corner checks. Complete bundle build, lifecycle/hit-region
+tests, install policy and preflight passed. The candidate is now the default
+and Hom-iPhoneDuo's bound/environment bundle; the boot chain and other machine
+bindings are unchanged. This is a guest-runtime callback fix, with no new
+kernel, DeviceTree, DSC or firmware patch-set change. See
+`Guest/iphone_duo_bringup.md` for sampling details and validation limits.

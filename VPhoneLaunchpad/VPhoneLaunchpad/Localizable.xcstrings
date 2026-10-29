@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Update this machine's Core Bundle to use Duo display selection." : {
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Update this machine's Core Bundle to use Duo display selection."}},
+        "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "请更新此虚拟机的 Core Bundle，以选择 Duo 启动屏幕。"}}
+      }
+    },
+    "Start with Inner Display" : {
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Start with Inner Display"}},
+        "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "内屏启动"}}
+      }
+    },
+    "Start with Outer Display" : {
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Start with Outer Display"}},
+        "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "外屏启动"}}
+      }
+    },
+    "Choose the Duo display to start" : {
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Choose the Duo display to start"}},
+        "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "选择 Duo 启动屏幕"}}
+      }
+    },
+    "Display selection requires an iPhone Duo." : {
+      "localizations" : {
+        "en" : {"stringUnit" : {"state" : "translated", "value" : "Display selection requires an iPhone Duo."}},
+        "zh-Hans" : {"stringUnit" : {"state" : "translated", "value" : "只有 iPhone Duo 支持选择启动屏幕。"}}
+      }
+    },
     "Apple TV" : {
       "localizations" : {
         "en" : {"stringUnit" : {"state" : "translated", "value" : "Apple TV"}},

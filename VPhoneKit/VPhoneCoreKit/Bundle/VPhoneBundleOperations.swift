@@ -209,8 +209,12 @@ public enum VPhoneBundleOperations {
         networkEdit: VPhoneNetworkEdit = VPhoneNetworkEdit(),
         unlocksAtStartup: Bool? = nil,
         syncsHostLocation: Bool? = nil,
+        duoDisplayMode: VPhoneVirtualMachineManifest.DuoDisplayMode? = nil,
     ) throws -> VPhoneBundle {
         let bundle = try library.bundle(named: name)
+        if duoDisplayMode != nil, bundle.manifest.guestDevice.productType != "iPhone19,4" {
+            throw VPhoneManifestError.duoDisplayRequiresDuo
+        }
         var edit = networkEdit
         edit.mode = networkMode ?? edit.mode
         edit.bridgeInterface = bridgeInterface ?? edit.bridgeInterface
@@ -223,6 +227,7 @@ public enum VPhoneBundleOperations {
             networkConfig: network,
             unlocksAtStartup: unlocksAtStartup,
             syncsHostLocation: syncsHostLocation,
+            duoDisplayMode: duoDisplayMode,
         )
         try updated.write(to: bundle.configURL)
         try VPhoneHostFilePermissions.makeAccessible(at: bundle.configURL)

@@ -157,6 +157,9 @@ int main(void) {
         [pipeline setupDefaultPipelineForArbiter:nil];
         assert(!pipeline.eventsEnabled); // Native ordering reproduces the bug.
         VPhoneOrientationGateInstall();
+        // The constructor retries after five seconds. It must not save its own
+        // wrapper as the original implementation and recurse on the next setup.
+        VPhoneOrientationGateInstall();
         [pipeline setupDefaultPipelineForArbiter:nil];
         assert(pipeline.eventsEnabled && !pipeline.deferring && pipeline.setups == 2);
         backlight.screenIsOn = NO;

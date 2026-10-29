@@ -164,6 +164,7 @@ enum GuestAPI {
     }
 
     static func execute(method: String, params: [String: Any]) throws -> [String: Any] {
+        vp_duo_prepare_orientation()
         switch method {
         case "device.snapshot":
             var snapshot = try collectDeviceSnapshot()

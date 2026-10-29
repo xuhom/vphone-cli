@@ -116,6 +116,10 @@ void vp_hid_touch_edge(int phase, double x, double y, int edge);
 /// SpringBoardServices has no SBSUndimScreen.
 bool vp_screen_undim(void);
 bool vp_device_pose_set(int deviceOrientation, int hingeState, int tabletopPose);
+/// Keep AX-based capture, coordinate conversion and orientation readback on
+/// the fixed Duo inner display; other displays retain the native AX answer.
+void vp_duo_prepare_orientation(void);
+bool vp_duo_inner_display(void);
 
 /// Ask launchd to shut the guest down and halt. Returns 0 once the request is
 /// accepted, otherwise an errno value. Needs root.

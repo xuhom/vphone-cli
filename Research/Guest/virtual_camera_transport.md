@@ -1,6 +1,6 @@
 # Virtual camera transport and capture hooks
 
-## Duo preview investigation (2026-10-27, validation pending)
+## Duo preview repair (2026-10-27, user confirmed)
 
 On iOS 27.1 (24A94425), Camera displayed black despite successful synthetic
 source registration, increasing shared-frame counters, and the client logging
@@ -16,10 +16,9 @@ record the parent layer geometry and visibility.
 
 The full bundle build, host camera-frame checks, and 1,183 frame-geometry
 checks passed. Bundle 2.13.8-local.0925619b was installed and the Duo rebooted,
-but live preview verification was interrupted to publish the code. This is
-an unverified repair candidate, not a confirmed camera fix. Next: start the
-test-pattern source, inspect the new layer diagnostics and screenshot, then
-restore the Mac built-in source and verify moving preview and capture.
+and the user subsequently confirmed that the camera was fixed. This is user
+confirmation of the repair; separate photo/video capture acceptance was not
+recorded in this follow-up.
 
 ## Runtime boundary
 

@@ -23,6 +23,12 @@ nonisolated struct VPhoneLaunchpadMachinePath: Hashable, Sendable {
 /// Mirrors `VPhoneBundleReport`, the JSON `vphone-cli vm list --json` and
 /// `vm info --json` print.
 nonisolated struct VPhoneLaunchpadMachine: Decodable, Hashable, Identifiable, Sendable {
+    enum DuoDisplayMode: String, Sendable {
+        case inner, outer
+    }
+
+    var isDuo: Bool { guestProductType == "iPhone19,4" }
+
     struct Network: Decodable, Hashable, Sendable {
         struct IPv4: Decodable, Hashable, Sendable {
             let address: String

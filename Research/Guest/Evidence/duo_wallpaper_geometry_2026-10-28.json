@@ -1,0 +1,369 @@
+{
+  "purpose": "Offline evidence review; these are intervention snapshots, not clean baseline captures.",
+  "reviewDate": "2026-10-28",
+  "snapshots": [
+    {
+      "stage": "stage9",
+      "source": "/tmp/duo-wallpaper-stage9.json",
+      "sha256": "a7365e9639e2bd77185cbb6df44c47797ee082fe7cac065a096d854396993809",
+      "date": "2026-10-28 12:34:58 +0000",
+      "displayOrientation": "rot90",
+      "windows": [
+        {
+          "class": "_SBWallpaperSecureWindow",
+          "sceneOrientation": "4",
+          "controllers": [
+            {
+              "class": "_SBWallpaperWindowRootViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": []
+            },
+            {
+              "class": "PBUIPosterViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "4",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = <FBScene: 0xadae66100; PosterKit:434FD178-48BE-4B49-93DA-2D93640F8F72; active: YES; FG: YES> {",
+                "frame = NSRect: {{0, 0}, {951, 669}};",
+                "interfaceOrientation = landscapeLeft (4);",
+                "ssk_surfaceType = 0;",
+                "systemDisplayIdentifier = 58ABCB18-D1AA-48D6-925D-D9AF5BD30FD6;",
+                "systemShellHostingSpaceIdentifier = SB-display-BF0DC480-5EE2-4EC1-B02B-C75E94759832;",
+                "deviceOrientation = portrait (1);",
+                "(20715) = NSSize: {669, 951};",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:34:08Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 1;",
+                "scene = 0x0;",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T05:28:59Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 1;"
+              ]
+            },
+            {
+              "class": "PBUIPosterLockViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = <FBScene: 0xadae66100; PosterKit:434FD178-48BE-4B49-93DA-2D93640F8F72; active: YES; FG: YES> {",
+                "frame = NSRect: {{0, 0}, {951, 669}};",
+                "interfaceOrientation = landscapeLeft (4);",
+                "ssk_surfaceType = 0;",
+                "systemDisplayIdentifier = 58ABCB18-D1AA-48D6-925D-D9AF5BD30FD6;",
+                "systemShellHostingSpaceIdentifier = SB-display-BF0DC480-5EE2-4EC1-B02B-C75E94759832;",
+                "deviceOrientation = portrait (1);",
+                "(20715) = NSSize: {669, 951};",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:34:08Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 1;"
+              ]
+            },
+            {
+              "class": "PBUIPosterHomeViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = 0x0;",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T05:28:59Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 1;"
+              ]
+            }
+          ],
+          "views": [
+            {
+              "class": "_SBWallpaperSecureWindow",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {669, 951}}",
+              "bounds": "NSRect: {{0, 0}, {669, 951}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {669, 951}}",
+              "bounds": "NSRect: {{0, 0}, {669, 951}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {669, 951}}",
+              "bounds": "NSRect: {{0, 0}, {669, 951}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "PBUIPosterFloatingLayerReplica",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            }
+          ]
+        },
+        {
+          "class": "SBCoverSheetWindow",
+          "sceneOrientation": "4",
+          "controllers": [],
+          "views": [
+            {
+              "class": "PBUIPosterFloatingLayerReplica",
+              "frame": "NSRect: {{0, 0}, {669, 951}}",
+              "bounds": "NSRect: {{0, 0}, {669, 951}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stage": "stage13",
+      "source": "/tmp/duo-wallpaper-stage13.json",
+      "sha256": "fab360a2d6a80f7e9f8bea26142c7bdc1fd281e0923d982989afcd64f74aefe3",
+      "date": "2026-10-28 12:59:15 +0000",
+      "displayOrientation": "rot90",
+      "windows": [
+        {
+          "class": "_SBWallpaperSecureWindow",
+          "sceneOrientation": "1",
+          "controllers": [
+            {
+              "class": "_SBWallpaperWindowRootViewController",
+              "interfaceOrientation": "1",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": []
+            },
+            {
+              "class": "PBUIPosterViewController",
+              "interfaceOrientation": "1",
+              "activeOrientation": "4",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = <FBScene: 0x659881d00; PosterKit:9C38BD2D-5469-4FE0-B020-5C1B205E3D31; active: YES; FG: YES> {",
+                "frame = NSRect: {{0, 0}, {669, 951}};",
+                "interfaceOrientation = landscapeLeft (4);",
+                "ssk_surfaceType = 0;",
+                "systemDisplayIdentifier = 96827F52-FE7F-4D2D-94DA-1B2EC3CC9645;",
+                "systemShellHostingSpaceIdentifier = SB-display-BF0DC480-5EE2-4EC1-B02B-C75E94759832;",
+                "deviceOrientation = portrait (1);",
+                "(20715) = NSSize: {669, 951};",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:59:00Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 1;",
+                "scene = 0x0;",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:47:00Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 4;"
+              ]
+            },
+            {
+              "class": "PBUIPosterLockViewController",
+              "interfaceOrientation": "1",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = <FBScene: 0x659881d00; PosterKit:9C38BD2D-5469-4FE0-B020-5C1B205E3D31; active: YES; FG: YES> {",
+                "frame = NSRect: {{0, 0}, {669, 951}};",
+                "interfaceOrientation = landscapeLeft (4);",
+                "ssk_surfaceType = 0;",
+                "systemDisplayIdentifier = 96827F52-FE7F-4D2D-94DA-1B2EC3CC9645;",
+                "systemShellHostingSpaceIdentifier = SB-display-BF0DC480-5EE2-4EC1-B02B-C75E94759832;",
+                "deviceOrientation = portrait (1);",
+                "(20715) = NSSize: {669, 951};",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:59:00Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 1;"
+              ]
+            },
+            {
+              "class": "PBUIPosterHomeViewController",
+              "interfaceOrientation": "1",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = 0x0;",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:47:00Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 4;"
+              ]
+            }
+          ],
+          "views": [
+            {
+              "class": "_SBWallpaperSecureWindow",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "PBUIPosterFloatingLayerReplica",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            }
+          ]
+        },
+        {
+          "class": "SBCoverSheetWindow",
+          "sceneOrientation": "1",
+          "controllers": [],
+          "views": [
+            {
+              "class": "PBUIPosterFloatingLayerReplica",
+              "frame": "NSRect: {{0, 0}, {669, 951}}",
+              "bounds": "NSRect: {{0, 0}, {669, 951}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stage": "stage14",
+      "source": "/tmp/duo-wallpaper-stage14.json",
+      "sha256": "cd5f54c444956079885f546953e1d94676a33cbd7613607da71a339f6e67f6ca",
+      "date": "2026-10-28 13:00:02 +0000",
+      "displayOrientation": "rot90",
+      "windows": [
+        {
+          "class": "_SBWallpaperSecureWindow",
+          "sceneOrientation": "4",
+          "controllers": [
+            {
+              "class": "_SBWallpaperWindowRootViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": []
+            },
+            {
+              "class": "PBUIPosterViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "4",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = <FBScene: 0x659881d00; PosterKit:9C38BD2D-5469-4FE0-B020-5C1B205E3D31; active: YES; FG: YES> {",
+                "frame = NSRect: {{0, 0}, {669, 951}};",
+                "interfaceOrientation = landscapeLeft (4);",
+                "ssk_surfaceType = 0;",
+                "systemDisplayIdentifier = 96827F52-FE7F-4D2D-94DA-1B2EC3CC9645;",
+                "systemShellHostingSpaceIdentifier = SB-display-BF0DC480-5EE2-4EC1-B02B-C75E94759832;",
+                "deviceOrientation = landscapeLeft (3);",
+                "(20715) = NSSize: {669, 951};",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{951, 669}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:59:22Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 4;",
+                "scene = 0x0;",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:47:00Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 4;"
+              ]
+            },
+            {
+              "class": "PBUIPosterLockViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = <FBScene: 0x659881d00; PosterKit:9C38BD2D-5469-4FE0-B020-5C1B205E3D31; active: YES; FG: YES> {",
+                "frame = NSRect: {{0, 0}, {669, 951}};",
+                "interfaceOrientation = landscapeLeft (4);",
+                "ssk_surfaceType = 0;",
+                "systemDisplayIdentifier = 96827F52-FE7F-4D2D-94DA-1B2EC3CC9645;",
+                "systemShellHostingSpaceIdentifier = SB-display-BF0DC480-5EE2-4EC1-B02B-C75E94759832;",
+                "deviceOrientation = landscapeLeft (3);",
+                "(20715) = NSSize: {669, 951};",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{951, 669}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:59:22Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 4;"
+              ]
+            },
+            {
+              "class": "PBUIPosterHomeViewController",
+              "interfaceOrientation": "4",
+              "activeOrientation": "unavailable",
+              "viewFrame": "NSRect: {{0, 0}, {951, 669}}",
+              "sceneEvidence": [
+                "scene = 0x0;",
+                "PUIPosterSnapshotBundleInfoKeyAssetSize = \"{669, 951}\";",
+                "PUIPosterSnapshotBundleInfoKeyDateCreated = \"2026-10-28T12:47:00Z\";",
+                "PUIPosterSnapshotBundleInfoKeyInterfaceOrientation = 4;"
+              ]
+            }
+          ],
+          "views": [
+            {
+              "class": "_SBWallpaperSecureWindow",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "_UIScenePresentationView",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            },
+            {
+              "class": "PBUIPosterFloatingLayerReplica",
+              "frame": "NSRect: {{0, 0}, {951, 669}}",
+              "bounds": "NSRect: {{0, 0}, {951, 669}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            }
+          ]
+        },
+        {
+          "class": "SBCoverSheetWindow",
+          "sceneOrientation": "4",
+          "controllers": [],
+          "views": [
+            {
+              "class": "PBUIPosterFloatingLayerReplica",
+              "frame": "NSRect: {{0, 0}, {669, 951}}",
+              "bounds": "NSRect: {{0, 0}, {669, 951}}",
+              "transform": "CGAffineTransform: {{1, 0, 0, 1}, {0, 0}}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

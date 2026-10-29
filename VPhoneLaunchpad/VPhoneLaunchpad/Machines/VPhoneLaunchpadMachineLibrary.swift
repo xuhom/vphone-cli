@@ -477,7 +477,12 @@ final class VPhoneLaunchpadMachineLibrary {
 
     /// Starts a machine with its own bundle, after checking that bundle in
     /// this session (policy exception, host preflight and AMFI admission).
-    func start(_ machine: Path, headless: Bool = false) async {
+    func start(
+        _ machine: Path,
+        headless: Bool = false,
+        duoDisplay: VPhoneLaunchpadMachine.DuoDisplayMode? = nil,
+    ) async {
+        guard state(of: machine) == .stopped else { return }
         guard let version = bundleVersion(for: machine) else {
             actionError = VPhoneLaunchpadError(String(localized: "No Core Bundle version is installed. Install one in Core Bundle."))
             return
@@ -518,6 +523,20 @@ final class VPhoneLaunchpadMachineLibrary {
         }
         panicked.remove(machine)
         do {
+            if let duoDisplay {
+                guard VPhoneLaunchpadMachine.guestProductType(in: machine.url) == "iPhone19,4" else {
+                    throw VPhoneLaunchpadError(String(localized: "Display selection requires an iPhone Duo."))
+                }
+                activities[machine] = String(localized: "Saving settings…")
+                defer { activities[machine] = nil }
+                let help = try await commandLine.runChecked(["vm", "config", "--help"])
+                guard help.lines.contains(where: { $0.contains("--duo-display") }) else {
+                    throw VPhoneLaunchpadError(String(localized: "Update this machine's Core Bundle to use Duo display selection."))
+                }
+                _ = try await commandLine.runChecked(
+                    ["vm", "config", machine.name, "--duo-display", duoDisplay.rawValue] + machine.libraryArguments,
+                )
+            }
             let child = try commandLine.start(arguments, logFile: Self.consoleLog(machine)) { [weak self] line in
                 if VPhoneLaunchpadCreationPipeline.isPanic(line) {
                     Task { @MainActor in self?.panicked.insert(machine) }

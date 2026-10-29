@@ -290,6 +290,19 @@ struct VPhoneLaunchpadMachinesView: View {
                     Label("Stop", systemImage: "stop.fill")
                 }
                 .help("Stop \(running.map(\.name).joined(separator: ", ")). Hold Option to force stop.")
+            } else if selected.count == 1, let machine = stopped.first, machine.isDuo {
+                Menu {
+                    Button("Start with Inner Display") {
+                        Task { await library.start(machine.path, duoDisplay: .inner) }
+                    }
+                    Button("Start with Outer Display") {
+                        Task { await library.start(machine.path, duoDisplay: .outer) }
+                    }
+                } label: {
+                    Label("Start", systemImage: "play.fill")
+                }
+                .menuIndicator(.hidden)
+                .help("Choose the Duo display to start")
             } else {
                 Button {
                     library.start(stopped)

@@ -85,6 +85,8 @@ final class VPhoneGuestControl {
     /// that has just started connects, from the manifest. Read at each connect,
     /// so a change from the menu holds from the next guest start.
     @ObservationIgnored var unlocksAtStartup = false
+    @ObservationIgnored var duoStartupDisplay: VPhoneVirtualMachineManifest.DuoDisplayMode?
+    @ObservationIgnored private var duoStartupTask: Task<Void, Never>?
     /// Whether the bundle's /usr/lib hooks are kept in step with the guest.
     /// Off for an Apple TV: its preset leaves the environment out, and the
     /// iOS hooks have no tvOS port.
@@ -186,6 +188,8 @@ final class VPhoneGuestControl {
     }
 
     func stop() {
+        duoStartupTask?.cancel()
+        duoStartupTask = nil
         monitor?.cancel()
         monitor = nil
         orderedInput?.cancel()
@@ -247,6 +251,44 @@ final class VPhoneGuestControl {
                 let instance = info["instance"] as? String
                 let started = instance == nil || instance != connectedInstance
                 connectedInstance = instance
+                if started, let mode = duoStartupDisplay {
+                    duoStartupTask?.cancel()
+                    duoStartupTask = Task {
+                        do {
+                            _ = try await call("files.write", params: [
+                                "path": "/var/db/vphone/duo-display-mode",
+                                "content": mode.rawValue,
+                            ])
+                            guard capabilities.contains("device_pose") else { return }
+                            _ = try await call("display.posture", params: [
+                                "hinge": mode == .inner ? "open-flat" : "closed",
+                                // The inner panel's mount turns device
+                                // portrait into the desired landscape UI.
+                                "orientation": "portrait",
+                            ])
+                            // vphoned can answer before SpringBoard registers
+                            // its display. Verify the applied inner rotation,
+                            // retrying briefly while the scene starts.
+                            if mode == .inner {
+                                for attempt in 0 ..< 8 {
+                                    try Task.checkCancellation()
+                                    do {
+                                        _ = try await call("display.rotation", params: ["orientation": "90"])
+                                        print("[duo] inner display started landscape")
+                                        break
+                                    } catch {
+                                        if attempt == 7 { throw error }
+                                        try await Task.sleep(for: .milliseconds(500))
+                                    }
+                                }
+                            }
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            print("[duo] startup display setup failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
                 if started, unlocksAtStartup, capabilities.contains("screen_unlock") {
                     if setupPending {
                         print("[unlock] Setup Assistant is pending; leaving the guest as it is")

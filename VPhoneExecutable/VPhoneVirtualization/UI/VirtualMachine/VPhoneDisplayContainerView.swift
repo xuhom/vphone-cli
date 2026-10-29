@@ -21,6 +21,9 @@ final class VPhoneDisplayContainerView: NSView {
     var isDuoGuest = false {
         didSet { needsLayout = true }
     }
+    var isDuoInnerDisplay = false {
+        didSet { needsLayout = true }
+    }
     var hasRoundedScreen: Bool { isPhoneGuest || isPadGuest }
     private let phoneOverlay = CAShapeLayer()
     private let screenMask = CAShapeLayer()
@@ -209,7 +212,12 @@ final class VPhoneDisplayContainerView: NSView {
         }
         // iPad panels have much tighter physical corners than iPhone panels.
         // Use a proportional approximation so the outline scales with the VM.
-        let radius = min(rect.width, rect.height) * (isPadGuest ? 0.035 : 0.12)
+        // Duo's display1 has a 55-point corner radius on a 626 x 890 panel.
+        // Keep the physical radius/panel ratio when using a larger render mode
+        // and when the user resizes or rotates the window.
+        let radius = isDuoInnerDisplay
+            ? min(rect.width, rect.height) * (55.0 / 626.0)
+            : min(rect.width, rect.height) * (isPadGuest ? 0.035 : 0.12)
         let origin = displayView.convert(rect.origin, to: self)
         let xAxis = displayView.convert(NSPoint(x: rect.minX + 1, y: rect.minY), to: self)
         let yAxis = displayView.convert(NSPoint(x: rect.minX, y: rect.minY + 1), to: self)
@@ -219,7 +227,7 @@ final class VPhoneDisplayContainerView: NSView {
             tx: origin.x, ty: origin.y,
         )
         let panel: CGPath
-        if isDuoGuest {
+        if isDuoGuest && !isDuoInnerDisplay {
             // The outer panel meets the hinge on its physical left edge.
             // Build the silhouette in panel coordinates so the straight edge
             // follows that edge when the guest rotates.

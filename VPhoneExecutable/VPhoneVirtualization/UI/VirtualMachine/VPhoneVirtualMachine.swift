@@ -47,8 +47,9 @@ class VPhoneVirtualMachine: NSObject, VZVirtualMachineDelegate {
         var kernelDebugPort: Int?
         /// The guest runs iPadOS: Esc is a key there, not the back gesture.
         var isPadGuest = false
-        /// iPhone Duo currently boots with its outer display only.
+        /// iPhone Duo has a distinct cover silhouette.
         var isDuoGuest = false
+        var isDuoInnerDisplay = false
         var isTVGuest = false
         var isHomePodGuest = false
         /// The guest runs watchOS: its side button is a key of its own (consumer
@@ -176,13 +177,20 @@ class VPhoneVirtualMachine: NSObject, VZVirtualMachineDelegate {
 
         // Display
         let gfx = VZMacGraphicsDeviceConfiguration()
-        gfx.displays = [
-            VZMacGraphicsDisplayConfiguration(
-                widthInPixels: options.screenWidth,
-                heightInPixels: options.screenHeight,
-                pixelsPerInch: options.screenPPI,
-            ),
-        ]
+        let display = VZMacGraphicsDisplayConfiguration(
+            widthInPixels: options.screenWidth,
+            heightInPixels: options.screenHeight,
+            pixelsPerInch: options.screenPPI,
+        )
+        if options.isDuoInnerDisplay {
+            // V68's display1 profile is keyed by this framebuffer UUID.
+            // Guest scene classification uses it to distinguish fixed-inner
+            // startup from the cover, independently of scanout dimensions.
+            let innerDisplayID = NSUUID(uuidString: "BF0DC480-5EE2-4EC1-B02B-C75E94759832")!
+            Dynamic(display)._setDisplayIdentifier(innerDisplayID.uuidString)
+            Dynamic(display)._setUUID(innerDisplayID)
+        }
+        gfx.displays = [display]
         config.graphicsDevices = [gfx]
 
         // Audio
@@ -256,6 +264,9 @@ class VPhoneVirtualMachine: NSObject, VZVirtualMachineDelegate {
 
         // Multi-touch (USB touch screen)
         if let obj = Dynamic._VZUSBTouchScreenConfiguration().asObject {
+            if options.isDuoInnerDisplay, let association = Dynamic(display)._uuid.asObject {
+                Dynamic(obj).setAssociationIdentifier(association)
+            }
             Dynamic(config)._setMultiTouchDevices([obj])
             print("[vphone] USB touch screen configured")
         }
