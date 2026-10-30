@@ -18,9 +18,17 @@ static NSUInteger originalReads;
 @implementation DuoTestAXServer
 - (long)activeInterfaceOrientation { originalReads++; return 2; }
 @end
+@interface DuoTestMotionManager : NSObject
++ (BOOL)isAvailable;
+@end
+@implementation DuoTestMotionManager
++ (BOOL)isAvailable { return YES; }
+@end
 static Class testClass(NSString *name) {
     if ([name isEqual:@"CADisplay"]) return DuoTestDisplay.class;
     if ([name isEqual:@"AXSpringBoardServer"]) return DuoTestAXServer.class;
+    if ([name isEqual:@"CMAngleManager"] || [name isEqual:@"CMDeviceStateManager"])
+        return DuoTestMotionManager.class;
     return NSClassFromString(name);
 }
 #define NSClassFromString(name) testClass(name)
@@ -36,8 +44,10 @@ int main(void) { @autoreleasepool {
     testDisplay = display;
     display.UUID = NSUUID.UUID;
     display.currentOrientation = @"rot90";
+    assert(vp_core_motion_hinge());
     assert([server activeInterfaceOrientation] == 2);
     display.UUID = [[NSUUID alloc] initWithUUIDString:@"BF0DC480-5EE2-4EC1-B02B-C75E94759832"];
+    assert(!vp_core_motion_hinge());
     NSArray *values = @[@"rot0", @"rot90", @"rot180", @"rot270"];
     long expected[] = {1, 4, 2, 3};
     for (NSUInteger i = 0; i < values.count; i++) {
@@ -48,5 +58,7 @@ int main(void) { @autoreleasepool {
     display.currentOrientation = @"unknown";
     assert([server activeInterfaceOrientation] == 2);
     assert(originalReads == 3);
-    puts("Duo AX orientation bridge: four rotations, fallback and repeated preparation passed");
+    display.UUID = NSUUID.UUID;
+    assert(vp_core_motion_hinge());
+    puts("Duo AX orientation bridge: four rotations, fallback, repeated preparation and fixed/relayed mode isolation passed");
 } }

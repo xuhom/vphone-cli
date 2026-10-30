@@ -85,6 +85,19 @@ enum GuestScreenUnlock {
         }
     }
 
+    /// Lights a dark screen and waits for it, leaving it locked, as opening a
+    /// closed foldable does: `SBSUndimScreen` first, one side-button press
+    /// when SpringBoard refuses that. Returns whether the screen is lit.
+    @discardableResult
+    static func wakeDisplay(timeout: Double = 2) -> Bool {
+        guard state().screenOff else { return true }
+        let deadline = Date().addingTimeInterval(timeout)
+        _ = vp_screen_undim()
+        if wait(until: Date().addingTimeInterval(undimWait), for: { !$0.screenOff }) { return true }
+        _ = try? pressButton("power")
+        return wait(until: deadline, for: { !$0.screenOff })
+    }
+
     /// The log messages are literals: arguments come back `<private>` in the
     /// guest log.
     private static func wakeForTap() {
@@ -159,6 +172,9 @@ enum GuestScreenUnlock {
     }
 
     // MARK: - State
+
+    /// Whether SpringBoard has the screen off.
+    static var screenIsOff: Bool { state().screenOff }
 
     private struct State {
         let locked: Bool

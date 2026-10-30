@@ -52,8 +52,8 @@ static void vpSetInnerDisplayProMotionMode(id display) {
         return;
     }
     NSArray *colors = @[@{@"ID": @1, @"PixelEncoding": @0, @"Depth": @8, @"Colorimetry": @1, @"EOTF": @0, @"DynamicRange": @0}];
-    NSArray *timings = @[@{@"ID": @1, @"Score": @1, @"HorizontalAttributes": @{@"Active": @2853},
-        @"VerticalAttributes": @{@"Active": @2007, @"PreciseSyncRate": @(120 << 16)}}];
+    NSArray *timings = @[@{@"ID": @1, @"Score": @1, @"HorizontalAttributes": @{@"Active": @2007},
+        @"VerticalAttributes": @{@"Active": @2853, @"PreciseSyncRate": @(120 << 16)}}];
     BOOL set = ((BOOL (*)(id, SEL, id, id))objc_msgSend)(display, setModes, colors, timings);
     vpFoldDisplayLog([NSString stringWithFormat:@"inner display: 120 Hz mode %@", set ? @"set" : @"refused"]);
 }
@@ -72,9 +72,15 @@ static BOOL vpAddInnerRenderDisplayToServer(id server) {
             vpFoldDisplayLog(@"inner display: virtual display initializer ABI unavailable");
             return NO;
         }
-        // The panel's native pixels, landscape: 951x669 points at 3x.
+        // The panel's native pixels, portrait as on hardware (669x951 points
+        // at 3x); its extended properties mount it at 270 degrees, so the
+        // landscape interface is drawn turned into it. Its physical size, in
+        // inches, is what pixelsPerInch divides by; a virtual display has
+        // none unless given one, and both panels share the cover's 460 ppi
+        // pitch (MobileGestalt main-screen-pitch).
         id display = [(id<VPhoneInnerDisplayInitialization>)[cls alloc] initWithOptions:@{
-            @"kCAVirtualDisplayWidth": @2853, @"kCAVirtualDisplayHeight": @2007,
+            @"kCAVirtualDisplayWidth": @2007, @"kCAVirtualDisplayHeight": @2853,
+            @"kCAVirtualDisplayPhysicalWidth": @(2007 / 460.0), @"kCAVirtualDisplayPhysicalHeight": @(2853 / 460.0),
             @"kCAVirtualDisplayUpdateRate": @60, @"kCAVirtualDisplayName": vpInnerDisplayName,
         }];
         if (!display) { vpFoldDisplayLog(@"inner display: initializer returned nil"); return NO; }
@@ -86,6 +92,7 @@ static BOOL vpAddInnerRenderDisplayToServer(id server) {
             ((void (*)(id, SEL, BOOL))objc_msgSend)(display, setEnabled, YES);
         vpTagUnknownDisplay(display);
         vpInnerRenderDisplay = display;
+        dispatch_async(dispatch_get_main_queue(), ^{ vpShareInnerDisplayPages(display); });
         vpFoldDisplayLog([NSString stringWithFormat:@"inner display: render display added %@ uniqueId=%@", display,
             [display respondsToSelector:sel_registerName("uniqueId")] ? [display valueForKey:@"uniqueId"] : @"-"]);
         return YES;
@@ -132,16 +139,51 @@ static void vpAddInnerRenderDisplay(unsigned int attempt) {
 // a render display's extendedProperties. The iPhone19,4 device tree gives
 // display0 (the primary, the cover) surface type 1 and display1 (the inner
 // panel) 2; SpringBoard's fold policies pick their panels by these.
+//
+// A hardware display takes its whole entry of MobileGestalt's
+// DisplayExtendedProperties (rotation, scale, corner radii, chrome and
+// framebuffer identifiers, read from the panel nodes the device tree repair
+// adds) when QuartzCore builds it. A virtual display takes nothing, so the
+// inner display is given the entry with its surface type here.
 static IMP vpOriginalExtendedProperties;
+
+static NSDictionary *vpGestaltDisplayProperties(NSNumber *surfaceType) {
+    // Kept once MobileGestalt has an answer; asked again until then.
+    static NSArray *entries;
+    NSArray *known;
+    @synchronized(NSNull.class) {
+        if (!entries) {
+            CFTypeRef (*copyAnswer)(CFStringRef, CFDictionaryRef) = dlsym(RTLD_DEFAULT, "MGCopyAnswer");
+            id answer = copyAnswer ? CFBridgingRelease(copyAnswer(CFSTR("DisplayExtendedProperties"), NULL)) : nil;
+            if ([answer isKindOfClass:NSArray.class] && [answer count]) {
+                entries = answer;
+                vpFoldDisplayLog([NSString stringWithFormat:@"inner display: %lu MobileGestalt display entries",
+                    (unsigned long)entries.count]);
+            }
+        }
+        known = entries;
+    }
+    for (NSDictionary *entry in known)
+        if ([entry isKindOfClass:NSDictionary.class] && [entry[@"DeviceSurfaceType"] isEqual:surfaceType]) return entry;
+    return nil;
+}
 
 static id vpSurfaceExtendedProperties(id self, SEL cmd) {
     id properties = ((id (*)(id, SEL))vpOriginalExtendedProperties)(self, cmd);
     if (VPhoneIsFixedDuoInnerDisplay(self)) return properties;
     id name = ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("deviceName"));
-    NSNumber *surfaceType = [name isEqual:@"primary"] ? @1 : [name isEqual:vpInnerDisplayName] ? @2 : nil;
+    BOOL inner = [name isEqual:vpInnerDisplayName];
+    NSNumber *surfaceType = [name isEqual:@"primary"] ? @1 : inner ? @2 : nil;
     if (!surfaceType || (properties && ![properties isKindOfClass:NSDictionary.class])) return properties;
     NSMutableDictionary *derived = properties ? [properties mutableCopy] : [NSMutableDictionary dictionary];
+    if (inner)
+        [derived addEntriesFromDictionary:vpGestaltDisplayProperties(surfaceType) ?: @{}];
     derived[@"DeviceSurfaceType"] = surfaceType;
+    derived[@"kMGQDeviceSurfaceType"] = surfaceType;
+    // The inner panel as Xcode 27.1's iPhone Duo simulator describes its
+    // second display.
+    if (inner) [derived addEntriesFromDictionary:@{@"DisplayRotation": @270, @"DisplayScale": @3,
+        @"ChromeIdentifier": @"com.apple.dt.devicekit.chrome.phone14", @"DeviceCornerRadius": @[@55, @55, @55, @55]}];
     return [derived copy];
 }
 
@@ -153,7 +195,8 @@ static id vpSurfaceExtendedProperties(id self, SEL cmd) {
 // backboardd hit-tests touches on the inner display's own contexts.
 // backboardd asks for a digitizer's display on every event and keeps
 // digitizer state per display, so the state is created under the inner
-// display the first time it is missing there.
+// display the first time it is missing there. The inner display is portrait
+// like the panel, and the panel shows it unturned, so positions carry over.
 static IMP vpOriginalDigitizerDisplayUUID, vpOriginalDigitizerState;
 static BOOL vpLoggedDigitizerSwitch;
 
@@ -194,54 +237,6 @@ static id vpInnerDigitizerState(id self, SEL selector, id service) {
     return state;
 }
 
-// The inner panel is mounted at 270 degrees (device tree display1), so its
-// digitizer reports positions in the panel's portrait frame, and the panel
-// shows the inner display turned to match. This guest's single digitizer
-// reports positions on the portrait cover panel, which backboardd would
-// stretch onto the inner display's landscape space unturned; while the
-// inner display has the digitizer, each finger's normalized position is
-// turned by the mount first.
-typedef struct __IOHIDEvent *VPHIDEventRef;
-static IMP vpOriginalHandleDirectTouch;
-static CFArrayRef (*vpHIDEventChildren)(VPHIDEventRef);
-static uint32_t (*vpHIDEventType)(VPHIDEventRef);
-static double (*vpHIDEventGetFloat)(VPHIDEventRef, uint32_t);
-static void (*vpHIDEventSetFloat)(VPHIDEventRef, uint32_t, double);
-
-static void vpTurnDigitizerPosition(VPHIDEventRef event) {
-    static const uint32_t digitizer = 11, x = 11 << 16, y = (11 << 16) | 1;
-    if (vpHIDEventType(event) == digitizer) {
-        double nx = vpHIDEventGetFloat(event, x), ny = vpHIDEventGetFloat(event, y);
-        vpHIDEventSetFloat(event, x, 1 - ny);
-        vpHIDEventSetFloat(event, y, nx);
-    }
-    CFArrayRef children = vpHIDEventChildren(event);
-    for (CFIndex index = 0; children && index < CFArrayGetCount(children); index++)
-        vpTurnDigitizerPosition((VPHIDEventRef)CFArrayGetValueAtIndex(children, index));
-}
-
-static void vpInnerHandleDirectTouch(id self, SEL selector, void *event, id service) {
-    if (event && vpInnerPanelLit()) vpTurnDigitizerPosition((VPHIDEventRef)event);
-    ((void (*)(id, SEL, void *, id))vpOriginalHandleDirectTouch)(self, selector, event, service);
-}
-
-static void vpInstallInnerDigitizerTurn(Class processor) {
-    Method handle = class_getInstanceMethod(processor, sel_registerName("_handleDirectTouchEvent:service:"));
-    const char *encoding = handle ? method_getTypeEncoding(handle) : "missing";
-    vpHIDEventChildren = dlsym(RTLD_DEFAULT, "IOHIDEventGetChildren");
-    vpHIDEventType = dlsym(RTLD_DEFAULT, "IOHIDEventGetType");
-    vpHIDEventGetFloat = dlsym(RTLD_DEFAULT, "IOHIDEventGetFloatValue");
-    vpHIDEventSetFloat = dlsym(RTLD_DEFAULT, "IOHIDEventSetFloatValue");
-    size_t length = strlen(encoding);
-    if (!vpHIDEventChildren || !vpHIDEventType || !vpHIDEventGetFloat || !vpHIDEventSetFloat ||
-        strncmp(encoding, "v32@0:8", 7) != 0 || length < 3 || strcmp(encoding + length - 3, "@24") != 0) {
-        vpFoldDisplayLog([NSString stringWithFormat:@"inner display: digitizer turn ABI unavailable (%s)", encoding]);
-        return;
-    }
-    vpOriginalHandleDirectTouch = method_setImplementation(handle, (IMP)vpInnerHandleDirectTouch);
-    vpFoldDisplayLog([NSString stringWithFormat:@"inner display: digitizer turn installed (%s)", encoding]);
-}
-
 static void vpInstallInnerDigitizer(void) {
     Class processor = objc_getClass("BKHIDDirectTouchEventProcessor");
     Method uuid = class_getInstanceMethod(processor, sel_registerName("_queue_displayUUIDForDigitizerService:"));
@@ -257,7 +252,6 @@ static void vpInstallInnerDigitizer(void) {
     vpOriginalDigitizerDisplayUUID = method_setImplementation(uuid, (IMP)vpInnerDigitizerDisplayUUID);
     vpOriginalDigitizerState = method_setImplementation(state, (IMP)vpInnerDigitizerState);
     vpFoldDisplayLog(@"inner display: digitizer routing installed");
-    vpInstallInnerDigitizerTurn(processor);
 }
 
 // MARK: - installation

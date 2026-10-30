@@ -28,6 +28,7 @@ GuestVirtualAudioProduct.storeOnStartup()
 // After SpringBoard has had time to come up, so the inner panel's layout
 // matches the posture it was booted with.
 GuestFoldPose.startOnStartup()
+GuestDeviceHubControl.startOnStartup()
 vp_vcam_start()
 GuestHomePodDisplay.startOnStartup()
 // Multi-finger injection is resolved here so the first pinch is not the call
