@@ -1193,6 +1193,8 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     private var displayGeometry: VPhoneDisplayGeometry {
         let backing = recordingGraphicsDisplay?.sizeInPixels ?? .zero
         if let active = activePanelPixels {
+            // Apply the active/backing pixel fraction in drawn view coordinates,
+            // including window scale and letterboxing, rather than guest points.
             return VPhoneDisplayGeometry(
                 viewBounds: bounds, displaySize: backing,
                 activeDisplaySize: active, isFlipped: isFlipped,

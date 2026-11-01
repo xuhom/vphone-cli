@@ -9,9 +9,9 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleVersion</key>
-    <string>75</string>
+	<string>76</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.14.7</string>
+	<string>2.15.0</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Streams audio from this virtual iPhone to an authorized device on the local network.</string>
 	<key>NSCameraUsageDescription</key>

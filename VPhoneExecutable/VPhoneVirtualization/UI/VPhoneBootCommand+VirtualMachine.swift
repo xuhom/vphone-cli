@@ -34,8 +34,10 @@ extension VPhoneBootCommand {
             isPadGuest: manifest.guestDevice.isPad,
             isDuoGuest: manifest.guestDevice.productType == "iPhone19,4",
             isDuoInnerDisplay: manifest.usesDuoInnerDisplay,
+            usesTVOS: manifest.guestDevice.usesTVOS,
             isTVGuest: manifest.guestDevice.family == .appleTV,
             isHomePodGuest: manifest.guestDevice.family == .homePod,
+            isHomeViewGuest: manifest.guestDevice.family == .homeView,
             isWatchGuest: manifest.guestDevice.family == .watch,
             isFoldableGuest: manifest.guestDevice == .iPhone19_4 && !manifest.usesDuoInnerDisplay
         )

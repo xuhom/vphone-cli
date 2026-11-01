@@ -50,8 +50,10 @@ class VPhoneVirtualMachine: NSObject, VZVirtualMachineDelegate {
         /// iPhone Duo has a distinct cover silhouette.
         var isDuoGuest = false
         var isDuoInnerDisplay = false
+        var usesTVOS = false
         var isTVGuest = false
         var isHomePodGuest = false
+        var isHomeViewGuest = false
         /// The guest runs watchOS: its side button is a key of its own (consumer
         /// Help), apart from the crown (Home) and the power key.
         var isWatchGuest = false

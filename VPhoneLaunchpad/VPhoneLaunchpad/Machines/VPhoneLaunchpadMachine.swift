@@ -158,6 +158,10 @@ nonisolated struct VPhoneLaunchpadMachine: Decodable, Hashable, Identifiable, Se
         guestProductType?.hasPrefix("AppleTV") == true
     }
 
+    var isHomeView: Bool {
+        guestProductType?.hasPrefix("HomeAccessory") == true
+    }
+
     var isHomePod: Bool {
         guestProductType?.hasPrefix("AudioAccessory") == true
     }
@@ -168,7 +172,7 @@ nonisolated struct VPhoneLaunchpadMachine: Decodable, Hashable, Identifiable, Se
 
     /// The guest OS name, including accessory and watch guests.
     var osName: String {
-        isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
+        isHomeView ? "HomeView Software" : isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
     }
 
     /// config.plist's `guestProductType`, else the product type in the name
@@ -185,7 +189,7 @@ nonisolated struct VPhoneLaunchpadMachine: Decodable, Hashable, Identifiable, Se
         let originals = folder.appendingPathComponent("FirmwareOriginals", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: originals.path)) ?? []
         for name in names.sorted() where name.hasSuffix("_Restore") {
-            if let type = name.split(separator: "_").first(where: { $0.wholeMatch(of: /(iPhone|iPad|AppleTV|AudioAccessory|Watch)\d+,\d+/) != nil }) {
+            if let type = name.split(separator: "_").first(where: { $0.wholeMatch(of: /(iPhone|iPad|AppleTV|AudioAccessory|HomeAccessory|Watch)\d+,\d+/) != nil }) {
                 return String(type)
             }
         }
@@ -308,18 +312,22 @@ nonisolated struct VPhoneLaunchpadFirmwareCatalog: Decodable, Sendable {
             family == "watch"
         }
 
+        var isHomeView: Bool {
+            family == "homeView"
+        }
+
         var isHomePod: Bool {
             family == "homePod"
         }
 
-        /// HomePod and Apple TV do not use iOS templates or slimming.
+        /// HomePod, HomeView and Apple TV do not use iOS templates or slimming.
         var requiresStandaloneRestore: Bool {
-            isAppleTV || isHomePod
+            isAppleTV || isHomePod || isHomeView
         }
 
         /// The system its IPSWs install.
         var osName: String {
-            isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
+            isHomeView ? "HomeView Software" : isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
         }
 
         /// The name with its product type, `iPhone 16 (iPhone17,3)`: Launchpad
