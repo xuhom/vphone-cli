@@ -122,6 +122,10 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
             control.unlocksAtStartup = vm.unlocksAtStartup
             if options.isDuoGuest {
                 control.duoStartupDisplay = try VPhoneVirtualMachineManifest.load(from: options.configURL).duoDisplayMode
+                if options.isFoldableGuest {
+                    control.duoStartupDisplay = .outer
+                    control.duoStartupPosture = VPhoneDuoPosture.load(in: options.configURL.deletingLastPathComponent()) ?? .closed
+                }
             }
             control.syncsGuestEnvironment = !options.isTVGuest && !options.isHomePodGuest
             control.syncsHostLocation = vm.syncsHostLocation
@@ -696,6 +700,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
+        windowController?.saveWindowStateForStop()
         stopControlServices()
     }
 
@@ -755,6 +760,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
     /// guest has stopped.
     @MainActor
     private func stopGuest() -> NSApplication.TerminateReply {
+        windowController?.saveWindowStateForStop()
         guard canShutDownGuest, let control else { return .terminateNow }
         isShuttingDownGuest = true
         print("[vphone] Asking the guest to shut down")

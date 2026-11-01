@@ -27,6 +27,17 @@ public struct VPhoneDisplayGeometry: Equatable, Sendable {
     /// Whether the view's y axis points down.
     public let isFlipped: Bool
 
+    /// AppKit can stretch a view's frame while its bounds retain the scanout
+    /// aspect. Duo's guest fills the cover scanout with the inner framebuffer;
+    /// the host reverses that small distortion when showing the inner panel.
+    public static func framebufferBounds(filling frameSize: CGSize, displaySize: CGSize) -> CGRect {
+        guard frameSize.width > 0, frameSize.height > 0,
+              displaySize.width > 0, displaySize.height > 0
+        else { return CGRect(origin: .zero, size: frameSize) }
+        return CGRect(x: 0, y: 0, width: frameSize.width,
+                      height: frameSize.width * displaySize.height / displaySize.width)
+    }
+
     /// A display with no size, or a view with no area, maps onto the whole
     /// view: there is nothing better to measure against.
     public init(viewBounds: CGRect, displaySize: CGSize, isFlipped: Bool) {

@@ -32,6 +32,12 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     private var frameRateSampledAt: CFTimeInterval = 0
     /// The guest's frame rate over the last second; nil while the display is off.
     private var frameRate: Int?
+    private let windowStateDefaults = UserDefaults(suiteName: "com.vphone.vm-window-state") ?? .standard
+    private var windowStateScene: String?
+    private var windowStateReady = false
+    private var fullScreenTransition = false
+    private var windowStateSave: DispatchWorkItem?
+    private var lastWindowedFrame: NSRect?
 
     var captureView: VPhoneVirtualMachineView? {
         virtualMachineView
@@ -59,6 +65,11 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         self.control = control
         self.homePodGuest = homePodGuest
         self.foldableGuest = foldableGuest
+        windowStateReady = false
+        windowStateScene = sceneIdentifier
+        let savedState = VPhoneWindowState.load(scene: sceneIdentifier, defaults: windowStateDefaults)
+        let initialOrientation = homePodGuest ? .portrait : savedState?.orientation ?? .portrait
+        if !homePodGuest { control.startupOrientation = savedState?.orientation }
         machineDirectory = URL(fileURLWithPath: sceneIdentifier)
         homeButton = nil
         foldButton = nil
@@ -80,10 +91,12 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
                 height: CGFloat(VPhoneGuestDevice.iPhone19_4.screen.height) / scale * duoWindowScale,
             )
             : nil
-        let windowSize = homePodGuest ? VPhoneHomePodDisplayView.defaultContentSize : NSSize(
+        let backingSize = homePodGuest ? VPhoneHomePodDisplayView.defaultContentSize : NSSize(
             width: CGFloat(screenWidth) / scale,
             height: CGFloat(screenHeight) / scale,
         )
+        let windowSize = foldableGuest ? control.duoStartupPosture.panelSize : backingSize
+        let restoresSamePanel = savedState.map { $0.panelSize == nil || $0.panelSize == windowSize } ?? false
         panelSize = windowSize
         let container: NSView
         if homePodGuest {
@@ -111,9 +124,10 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             display.isPadGuest = isPadGuest
             display.isDuoGuest = isDuoGuest
             display.isDuoInnerDisplay = isDuoInnerDisplay
-            display.isDuoCoverDisplay = !isDuoInnerDisplay
+            display.isDuoCoverDisplay = !isDuoInnerDisplay && (!foldableGuest || control.duoStartupPosture == .closed)
             display.panelSize = windowSize
-            display.backingPanelSize = windowSize
+            display.backingPanelSize = backingSize
+            display.stretchesBackingToPanel = foldableGuest
             displayContainer = display
             homePodDisplayView = nil
             container = display
@@ -130,7 +144,9 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         window.delegate = self
         window.level = .normal
         VPhoneAlert.hostWindow = window
-        if displayContainer?.hasRoundedScreen != true { window.contentAspectRatio = windowSize }
+        if displayContainer?.hasRoundedScreen != true {
+            window.contentAspectRatio = initialOrientation.displayedSize(panel: windowSize)
+        }
         window.title = name
         window.contentView = container
         if displayContainer?.hasRoundedScreen == true {
@@ -138,17 +154,12 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             window.backgroundColor = .clear
         }
 
-        // The scene belongs to the VM, not to the app: every VM directory keeps
-        // its own window frame, and a newly created VM opens centered instead
-        // of inheriting the last frame another VM saved.
+        // Read the old AppKit frame only as a migration. The new record keeps
+        // the frame and rotation together, independent of the binary's path.
         let sceneName = "vphone-scene-\(sceneIdentifier)"
         window.identifier = NSUserInterfaceItemIdentifier(sceneName)
-        let restoredFrame = window.setFrameUsingName(sceneName)
-        if !restoredFrame {
-            window.center()
-        }
-        window.setFrameAutosaveName(sceneName)
-        setMinimumContentSize(for: .portrait, on: window)
+        let legacyFrameRestored = savedState == nil && window.setFrameUsingName(sceneName)
+        setMinimumContentSize(for: initialOrientation, on: window)
         observeKeyState(of: window)
         // The titlebar accessory keeps device buttons visible while the title
         // truncates in a narrow window. HomePod uses its own display controls.
@@ -168,9 +179,14 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         pinWindowButtons(in: window)
         installTitle(name, in: window, trailingInset: trailingInset)
 
-        // Size after installing the toolbar, which changes the content height.
-        // A saved sideways frame starts in portrait until the guest reports it.
-        applyOrientation(.portrait, to: window, force: true)
+        // Restore after installing the toolbar: adding it changes the content
+        // height. Starting in portrait here would destroy a saved sideways frame.
+        if let savedState {
+            window.setFrame(savedState.frame(visibleFrames: NSScreen.screens.map(\.visibleFrame)), display: false)
+        } else if !legacyFrameRestored {
+            window.center()
+        }
+        applyOrientation(initialOrientation, to: window, force: true, preservingFrame: restoresSamePanel)
 
         let controller = NSWindowController(window: window)
         controller.showWindow(nil)
@@ -178,8 +194,12 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         // AppKit constrains the initial frame when showing it. Fit the panel
         // after the toolbar and actual screen are known, including a wide TV
         // panel whose saved frame may otherwise be clamped out of proportion.
-        // The guest starts unturned; the orientation poll follows it later.
-        if !homePodGuest { applyOrientation(.portrait, to: window, force: true) }
+        if !homePodGuest {
+            applyOrientation(initialOrientation, to: window, force: true, preservingFrame: restoresSamePanel)
+        }
+        windowStateReady = true
+        lastWindowedFrame = window.frame
+        scheduleWindowStateSave()
 
         keySender.window = window
         NSApp.activate(ignoringOtherApps: true)
@@ -207,9 +227,13 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         // The menu sets the orientation before the guest turns, and the poll
         // after; either way the window follows it.
         if !homePodGuest {
-            control.observeInterfaceOrientation { [weak self, weak window] orientation in
-                guard let self, let window else { return }
-                applyOrientation(orientation ?? .portrait, to: window)
+            control.observeInterfaceOrientation { [weak self, weak window, weak control] orientation in
+                // A disconnect has no orientation. Keep the last frame and
+                // rotation while the guest restarts or the VM shuts down.
+                guard let self, let window, let orientation else { return }
+                applyOrientation(orientation, to: window)
+                if let control, !control.isRestoringDisplayState { control.startupOrientation = orientation }
+                scheduleWindowStateSave()
             }
             // A foldable guest also folds by itself (Xcode DeviceHub), and its
             // panel shows sideways in the window until the poll catches up.
@@ -224,7 +248,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             }
             if foldableGuest {
                 control.observeFoldPosition { [weak self] position in
-                    if let position { self?.displayContainer?.isDuoCoverDisplay = position == .closed }
+                    if let position { self?.followDynamicPanel(position) }
                     self?.updateFoldButton(position: position, connected: self?.control?.isConnected == true)
                     self?.persistFoldPosition(position)
                 }
@@ -240,18 +264,27 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     /// guest's own persisted pose either.
     private func persistFoldPosition(_ position: VPhoneFoldPosition?) {
         guard let position, let machineDirectory else { return }
-        let url = machineDirectory.appendingPathComponent("display-posture.plist")
-        let record = ["position": position.rawValue]
-        guard let data = try? PropertyListSerialization.data(
-            fromPropertyList: record, format: .binary, options: 0
-        ) else { return }
         do {
-            try data.write(to: url, options: .atomic)
-            try? FileManager.default.setAttributes([.posixPermissions: 0o666], ofItemAtPath: url.path)
+            try position.save(in: machineDirectory)
             print("[fold] next start on the \(position.rawValue) panel")
         } catch {
             print("[fold] could not record the posture: \(error)")
         }
+    }
+
+    private func followDynamicPanel(_ position: VPhoneFoldPosition) {
+        guard foldableGuest, let container = displayContainer else { return }
+        guard panelSize != position.panelSize else {
+            pendingDuoPanel = nil
+            duoPanelFrame = nil
+            container.isDuoCoverDisplay = position == .closed
+            return
+        }
+        // The posture reply precedes the new interface orientation. Keep the
+        // current canvas until the poll can apply both in one layout, with
+        // the original right edge rather than an intermediate rotated frame.
+        if duoPanelFrame == nil { duoPanelFrame = displayWindow?.frame }
+        pendingDuoPanel = position
     }
 
     // MARK: - HomePod Display
@@ -266,17 +299,79 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Close
 
-    func windowDidEnterFullScreen(_: Notification) {
-        displayContainer?.needsLayout = true
+    func windowDidMove(_: Notification) { scheduleWindowStateSave() }
+
+    func windowDidResize(_: Notification) { scheduleWindowStateSave() }
+
+    func windowWillEnterFullScreen(_: Notification) {
+        saveWindowState()
+        fullScreenTransition = true
     }
 
+    func windowDidEnterFullScreen(_: Notification) {
+        fullScreenTransition = false
+        displayContainer?.needsLayout = true
+        scheduleWindowStateSave()
+    }
+
+    func windowWillExitFullScreen(_: Notification) { fullScreenTransition = true }
+
     func windowDidExitFullScreen(_: Notification) {
+        fullScreenTransition = false
         displayContainer?.needsLayout = true
         windowController?.window?.invalidateShadow()
+        scheduleWindowStateSave()
     }
 
     func windowDidEndLiveResize(_: Notification) {
         windowController?.window?.invalidateShadow()
+        scheduleWindowStateSave()
+    }
+
+    private func scheduleWindowStateSave() {
+        guard windowStateReady else { return }
+        windowStateSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.saveWindowState() }
+        windowStateSave = work
+        // A turn animates both the frame and the view. Save its final frame,
+        // and coalesce the many move/resize notifications from a drag.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    func saveWindowState() {
+        windowStateSave?.cancel()
+        windowStateSave = nil
+        guard windowStateReady, !fullScreenTransition,
+              let scene = windowStateScene, let window = displayWindow,
+              !window.isMiniaturized
+        else { return }
+        // Full screen has no ordinary window placement. Keep the last
+        // windowed frame, but still remember rotations made while full screen.
+        let frame: NSRect
+        if window.styleMask.contains(.fullScreen) {
+            guard let lastWindowedFrame else { return }
+            frame = lastWindowedFrame
+        } else {
+            frame = displayContainer?.destinationWindowFrame ?? window.frame
+            lastWindowedFrame = frame
+        }
+        let state = VPhoneWindowState(
+            frame: frame,
+            orientation: displayContainer?.orientation ?? .portrait,
+            panelSize: panelSize,
+        )
+        do {
+            try state.save(scene: scene, defaults: windowStateDefaults)
+        } catch {
+            print("[window] could not record window state: \(error)")
+        }
+    }
+
+    /// Shutdown can rotate SpringBoard or disconnect vphoned. Capture the
+    /// user's last pose before that sequence and stop recording its cleanup.
+    func saveWindowStateForStop() {
+        saveWindowState()
+        windowStateReady = false
     }
 
     /// A fixed transparent gap cannot be represented by contentAspectRatio:
@@ -308,6 +403,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     /// Disconnect the old display and input devices before rebuilding the VM.
     func closeForRestart() {
+        saveWindowStateForStop()
         clearHomePodDisplay()
         timers.forEach { $0.invalidate() }
         timers.removeAll()
@@ -338,6 +434,8 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     private var minimumDuoPanelSize: CGSize?
     private var orientationPollInFlight = false
     private var lastPolledFoldAngle: Double?
+    private var pendingDuoPanel: VPhoneFoldPosition?
+    private var duoPanelFrame: NSRect?
     private var screenRevealWork: DispatchWorkItem?
 
     /// Covers a foldable guest's panel while its screen is off, and for a
@@ -368,54 +466,91 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     private func pollOrientation() {
         guard !orientationPollInFlight,
               let control, control.isConnected, !control.isChangingOrientation,
+              !control.isRestoringDisplayState,
               control.guestCapabilities.contains("display_orientation")
         else { return }
         orientationPollInFlight = true
         Task {
             defer { orientationPollInFlight = false }
             guard let result = try? await control.call("display.orientation") else { return }
+            if let screenOff = result["screen_off"] as? Bool {
+                followGuestScreen(off: screenOff)
+            }
             // A foldable guest reports where its hinge is. DeviceHub's slider
             // moves it as it animates, so the window takes a fold once two
             // reads agree, rather than reshaping at each step of a sweep.
             if let foldAngle = (result["fold_angle"] as? NSNumber)?.doubleValue {
-                if foldAngle == lastPolledFoldAngle { control.followGuestFold(angle: foldAngle) }
+                let settled = foldAngle == lastPolledFoldAngle || foldAngle == control.foldAngle
                 lastPolledFoldAngle = foldAngle
-            }
-            if let screenOff = result["screen_off"] as? Bool {
-                followGuestScreen(off: screenOff)
+                // An external fold must settle before adopting its rotation,
+                // or the old cover would turn around its center first.
+                if foldableGuest, !settled { return }
+                if settled { control.followGuestFold(angle: foldAngle) }
             }
             guard !control.isChangingOrientation,
                   let degrees = (result["degrees"] as? NSNumber)?.intValue,
                   let orientation = VPhoneDisplayOrientation(degrees: degrees)
             else { return }
             control.interfaceOrientation = orientation
+            // A fold can change only the panel, leaving the same orientation
+            // and therefore sending no orientation-observer notification.
+            if pendingDuoPanel != nil, let window = displayWindow {
+                applyOrientation(orientation, to: window, force: true)
+            }
         }
     }
 
     /// Turns the VM view and gives the window the turned panel's aspect
     /// ratio, in one animation. A windowed VM reshapes around its center; a
     /// full-screen one keeps the screen and letterboxes the turned panel.
-    private func applyOrientation(_ orientation: VPhoneDisplayOrientation, to window: NSWindow, force: Bool = false) {
-        guard let container = displayContainer, force || container.orientation != orientation else { return }
+    private func applyOrientation(
+        _ orientation: VPhoneDisplayOrientation, to window: NSWindow,
+        force: Bool = false, preservingFrame: Bool = false,
+    ) {
+        guard let container = displayContainer,
+              force || container.orientation != orientation || pendingDuoPanel != nil else { return }
+        let panelFrame = duoPanelFrame
+        let changesPanel = pendingDuoPanel != nil
+        if let position = pendingDuoPanel {
+            panelSize = position.panelSize
+            container.panelSize = panelSize
+            container.isDuoCoverDisplay = position == .closed
+        }
+        pendingDuoPanel = nil
+        duoPanelFrame = nil
         setMinimumContentSize(for: orientation, on: window)
         if !container.hasRoundedScreen {
             window.contentAspectRatio = orientation.displayedSize(panel: panelSize)
         }
         var frame: NSRect?
-        if !window.styleMask.contains(.fullScreen) {
-            let current = window.contentRect(forFrameRect: window.frame)
+        // A restored frame already belongs to this panel and orientation.
+        // AppKit's Zoom may have left letterboxing: preserve that size too.
+        if !preservingFrame, !window.styleMask.contains(.fullScreen) {
+            let current = window.contentRect(forFrameRect: panelFrame ?? window.frame)
             var screenRect = current
             var visible = window.screen.map { window.contentRect(forFrameRect: $0.visibleFrame) } ?? .zero
             let gap = container.titlebarGap
             screenRect.size.height = max(1, screenRect.height - gap)
             visible.size.height = max(0, visible.height - gap)
-            var target = orientation.contentRect(from: screenRect, panel: panelSize, within: visible)
+            var target = changesPanel
+                ? orientation.rightAnchoredContentRect(from: screenRect, panel: panelSize, within: visible)
+                : orientation.contentRect(from: screenRect, panel: panelSize, within: visible)
             target.size.height += gap
-            if target != current {
-                frame = window.frameRect(forContentRect: target)
+            var targetFrame = window.frameRect(forContentRect: target)
+            if changesPanel {
+                // AppKit rounds fractional window edges. Round the size once
+                // around the anchor, so floating-point gap arithmetic cannot
+                // add a point of height on every close/open cycle.
+                let right = targetFrame.maxX.rounded()
+                let top = targetFrame.maxY.rounded()
+                targetFrame.size.width = targetFrame.width.rounded()
+                targetFrame.size.height = targetFrame.height.rounded()
+                targetFrame.origin = NSPoint(x: right - targetFrame.width, y: top - targetFrame.height)
             }
+            if targetFrame != window.frame { frame = targetFrame }
         }
-        container.turn(to: orientation, windowFrame: frame, animated: !force)
+        container.turn(to: orientation, windowFrame: frame, animated: !force && !changesPanel)
+        if changesPanel { scheduleWindowStateSave() }
     }
 
     /// Keep a Duo window at least as large as the compact cover baseline. The
@@ -808,7 +943,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     private func updateFoldButton(position: VPhoneFoldPosition?, connected: Bool) {
         guard let foldButton else { return }
-        foldButton.isEnabled = connected
+        foldButton.isEnabled = connected && control?.isRestoringDisplayState != true
             foldButton.image = Self.titlebarImage(Self.foldImage(for: position))
         let title = position?.title ?? VPhoneLocalization.text("Duo Fold Posture")
         foldButton.toolTip = VPhoneLocalization.format("Duo Fold Posture: %@", title)

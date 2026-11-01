@@ -86,7 +86,16 @@ final class VPhoneGuestControl {
     /// so a change from the menu holds from the next guest start.
     @ObservationIgnored var unlocksAtStartup = false
     @ObservationIgnored var duoStartupDisplay: VPhoneVirtualMachineManifest.DuoDisplayMode?
-    @ObservationIgnored private var duoStartupTask: Task<Void, Never>?
+    @ObservationIgnored var duoStartupPosture: VPhoneDuoPosture = .closed
+    /// The cover's direction before opening. A fold can leave the inner
+    /// scene's orientation active, so closing explicitly restores this pose.
+    @ObservationIgnored var duoCoverOrientation: VPhoneDisplayOrientation = .portrait
+    /// Loaded from host window preferences before the first guest probe.
+    /// Updated as the interface turns, so reconnects resume the latest pose.
+    @ObservationIgnored var startupOrientation: VPhoneDisplayOrientation?
+    var isRestoringDisplayState: Bool { displayStartupTask != nil }
+    @ObservationIgnored private var displayStartupTask: Task<Void, Never>?
+    @ObservationIgnored private var displayStartupGeneration = 0
     /// Whether the bundle's /usr/lib hooks are kept in step with the guest.
     /// Off for an Apple TV: its preset leaves the environment out, and the
     /// iOS hooks have no tvOS port.
@@ -149,6 +158,13 @@ final class VPhoneGuestControl {
     var foldPosition: VPhoneFoldPosition? {
         didSet {
             guard foldPosition != oldValue else { return }
+            if oldValue == .closed, let foldPosition, foldPosition != .closed,
+               !isRestoringDisplayState, let interfaceOrientation {
+                duoCoverOrientation = interfaceOrientation
+            }
+            if duoStartupDisplay == .outer, let foldPosition {
+                duoStartupPosture = foldPosition
+            }
             for observer in foldPositionObservers {
                 observer(foldPosition)
             }
@@ -228,8 +244,8 @@ final class VPhoneGuestControl {
     }
 
     func stop() {
-        duoStartupTask?.cancel()
-        duoStartupTask = nil
+        displayStartupTask?.cancel()
+        displayStartupTask = nil
         monitor?.cancel()
         monitor = nil
         orderedInput?.cancel()
@@ -291,48 +307,7 @@ final class VPhoneGuestControl {
                 let instance = info["instance"] as? String
                 let started = instance == nil || instance != connectedInstance
                 connectedInstance = instance
-                if started, let mode = duoStartupDisplay {
-                    duoStartupTask?.cancel()
-                    duoStartupTask = Task {
-                        do {
-                            _ = try await call("files.write", params: [
-                                "path": "/var/db/vphone/duo-display-mode",
-                                "content": mode.rawValue,
-                            ])
-                            guard capabilities.contains("device_pose") else { return }
-                            if mode == .outer {
-                                _ = try await setFoldPosition(.closed, duration: 0)
-                                return
-                            }
-                            _ = try await call("display.posture", params: [
-                                "hinge": mode == .inner ? "open-flat" : "closed",
-                                // The inner panel's mount turns device
-                                // portrait into the desired landscape UI.
-                                "orientation": "portrait",
-                            ])
-                            // vphoned can answer before SpringBoard registers
-                            // its display. Verify the applied inner rotation,
-                            // retrying briefly while the scene starts.
-                            if mode == .inner {
-                                for attempt in 0 ..< 8 {
-                                    try Task.checkCancellation()
-                                    do {
-                                        _ = try await call("display.rotation", params: ["orientation": "90"])
-                                        print("[duo] inner display started landscape")
-                                        break
-                                    } catch {
-                                        if attempt == 7 { throw error }
-                                        try await Task.sleep(for: .milliseconds(500))
-                                    }
-                                }
-                            }
-                        } catch is CancellationError {
-                            return
-                        } catch {
-                            print("[duo] startup display setup failed: \(error.localizedDescription)")
-                        }
-                    }
-                }
+                if started { restoreDisplayAtStartup(capabilities: capabilities) }
                 if started, unlocksAtStartup, capabilities.contains("screen_unlock") {
                     if setupPending {
                         print("[unlock] Setup Assistant is pending; leaving the guest as it is")
@@ -361,6 +336,57 @@ final class VPhoneGuestControl {
                 print("[control] probe failed: \(error)")
             }
             setDisconnected()
+        }
+    }
+
+    /// Restore the panel before its rotation: switching the Duo's panel can
+    /// itself turn the interface. Polling is paused until both have settled.
+    private func restoreDisplayAtStartup(capabilities: [String]) {
+        guard duoStartupDisplay != nil || startupOrientation != nil else { return }
+        displayStartupGeneration &+= 1
+        let generation = displayStartupGeneration
+        displayStartupTask?.cancel()
+        displayStartupTask = Task {
+            defer {
+                if generation == displayStartupGeneration { displayStartupTask = nil }
+            }
+            do {
+                if let mode = duoStartupDisplay {
+                    _ = try await call("files.write", params: [
+                        "path": "/var/db/vphone/duo-display-mode", "content": mode.rawValue,
+                    ])
+                    if capabilities.contains("device_pose") {
+                        if mode == .outer {
+                            _ = try await setFoldPosition(duoStartupPosture, duration: 0)
+                            print("[duo] dynamic display restored \(duoStartupPosture.rawValue)")
+                        } else {
+                            _ = try await call("display.posture", params: [
+                                "hinge": "open-flat", "orientation": "portrait",
+                            ])
+                        }
+                    }
+                }
+                // A new fixed-inner session keeps its existing landscape
+                // default. Once used, all four directions restore verbatim.
+                let target = startupOrientation ?? (duoStartupDisplay == .inner ? .landscapeLeft : nil)
+                guard let target, capabilities.contains("display_orientation") else { return }
+                // vphoned may answer before SpringBoard registers its screen.
+                for attempt in 0 ..< 8 {
+                    try Task.checkCancellation()
+                    do {
+                        try await rotate(toFirstOf: [target])
+                        print("[window] restored guest rotation \(target.rawValue)°")
+                        break
+                    } catch {
+                        if attempt == 7 { throw error }
+                        try await Task.sleep(for: .milliseconds(500))
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                print("[window] startup display restore failed: \(error.localizedDescription)")
+            }
         }
     }
 

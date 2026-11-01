@@ -147,6 +147,45 @@ struct DisplayOrientationTests {
 
     // MARK: - Window
 
+    @Test(arguments: [0.5, 1.0, 2.0])
+    func `Duo unfolding grows left with the right edge top and height fixed`(scale: Double) {
+        let cover = CGRect(x: 600 * scale, y: 100 * scale, width: 466 * scale, height: 678 * scale)
+        let visible = CGRect(x: 0, y: 0, width: 2000 * scale, height: 1400 * scale)
+        for orientation in [VPhoneDisplayOrientation.landscapeLeft, .landscapeRight] {
+            var rect = cover
+            for _ in 0 ..< 50 {
+                let opened = orientation.rightAnchoredContentRect(from: rect, panel: VPhoneDuoPosture.open.panelSize, within: visible)
+                #expect(abs(opened.maxX - cover.maxX) < 1e-7)
+                #expect(abs(opened.maxY - cover.maxY) < 1e-7)
+                #expect(abs(opened.height - cover.height) < 1e-7)
+                #expect(opened.width > cover.width)
+                #expect(abs(opened.width / opened.height - 951.0 / 669.0) < 1e-7)
+                rect = VPhoneDisplayOrientation.portrait.rightAnchoredContentRect(
+                    from: opened, panel: VPhoneDuoPosture.closed.panelSize, within: visible,
+                )
+            }
+            #expect(abs(rect.minX - cover.minX) < 1e-7)
+            #expect(abs(rect.minY - cover.minY) < 1e-7)
+            #expect(abs(rect.width - cover.width) < 1e-7)
+            #expect(abs(rect.height - cover.height) < 1e-7)
+        }
+    }
+
+    @Test func `Duo at the left screen edge shrinks without moving its right edge`() {
+        for offset in [0.0, -1920.0] {
+            let visible = CGRect(x: offset, y: 25, width: 1440, height: 900)
+            let cover = CGRect(x: offset, y: 100, width: 466, height: 678)
+            let opened = VPhoneDisplayOrientation.landscapeLeft.rightAnchoredContentRect(
+                from: cover, panel: VPhoneDuoPosture.open.panelSize, within: visible,
+            )
+            #expect(visible.contains(opened))
+            #expect(opened.maxX == cover.maxX)
+            #expect(opened.maxY == cover.maxY)
+            #expect(opened.height < cover.height)
+            #expect(abs(opened.width / opened.height - 951.0 / 669.0) < 1e-7)
+        }
+    }
+
     @Test func `turning keeps the long side and the center`() {
         let portrait = CGRect(x: 400, y: 50, width: 393, height: 852)
         let rect = VPhoneDisplayOrientation.landscapeLeft.contentRect(

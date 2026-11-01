@@ -1,20 +1,13 @@
 import Foundation
+import VPhoneCoreKit
 
 // MARK: - Positions
 
 /// Apple's three screen states, from suiatool's help text shipped in
 /// SpringBoardFoundation: `closed` 0°, `book` ~100°, `open` 180°.
-enum VPhoneFoldPosition: String, CaseIterable {
-    case closed, book, open
+typealias VPhoneFoldPosition = VPhoneDuoPosture
 
-    var angle: Double {
-        switch self {
-        case .closed: 0
-        case .book: 100
-        case .open: 180
-        }
-    }
-
+extension VPhoneDuoPosture {
     var title: String {
         switch self {
         case .closed: String(localized: "Closed", bundle: VPhoneLocalization.bundle)

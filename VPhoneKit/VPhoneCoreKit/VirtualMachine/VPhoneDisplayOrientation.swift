@@ -9,7 +9,7 @@ import Foundation
 /// is drawn sideways into it, as on a real iPhone. The window turns the panel
 /// the way the device was turned so the interface reads upright, and takes
 /// the turned panel's aspect ratio.
-public enum VPhoneDisplayOrientation: Int, CaseIterable, Sendable {
+public enum VPhoneDisplayOrientation: Int, Codable, CaseIterable, Sendable {
     case portrait = 0
     /// Interface landscape-left: the device turned clockwise.
     case landscapeLeft = 90
@@ -155,6 +155,24 @@ public enum VPhoneDisplayOrientation: Int, CaseIterable, Sendable {
             rect.origin.y = min(max(rect.minY, visible.minY), visible.maxY - rect.height)
         }
         return rect
+    }
+
+    /// Folding changes the canvas around its fixed right edge, instead of
+    /// rotating a window around its center. Keep the screen's height and top
+    /// edge when there is room; otherwise reduce it to the space on the left.
+    public func rightAnchoredContentRect(from current: CGRect, panel: CGSize, within visible: CGRect) -> CGRect {
+        let target = displayedSize(panel: panel)
+        guard target.width > 0, target.height > 0, current.height > 0 else { return current }
+        var right = current.maxX
+        var top = current.maxY
+        var scale = current.height / target.height
+        if visible.width > 0, visible.height > 0 {
+            right = min(max(right, visible.minX + 1), visible.maxX)
+            top = min(max(top, visible.minY + 1), visible.maxY)
+            scale = min(scale, (right - visible.minX) / target.width, (top - visible.minY) / target.height)
+        }
+        let size = CGSize(width: target.width * scale, height: target.height * scale)
+        return CGRect(x: right - size.width, y: top - size.height, width: size.width, height: size.height)
     }
 }
 

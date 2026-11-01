@@ -1,10 +1,29 @@
 import CoreGraphics
+import AppKit
 import Testing
 @testable import VPhoneCoreKit
 
 /// Issue #525: in full screen the display is letterboxed, and touches were
 /// normalized against the whole view, so the bars mapped onto the screen.
 struct DisplayGeometryTests {
+    @Test(arguments: VPhoneDuoPosture.allCases, [0.5, 1.0, 2.0])
+    @MainActor func `Duo panel stretching preserves full scanout touches`(posture: VPhoneDuoPosture, scale: Double) {
+        let size = CGSize(width: posture.panelSize.width * scale, height: posture.panelSize.height * scale)
+        let viewport = NSView(frame: CGRect(origin: .zero, size: size))
+        let host = NSView(frame: viewport.bounds)
+        viewport.addSubview(host)
+        let pixels = CGSize(width: 1398, height: 2034)
+        host.bounds = VPhoneDisplayGeometry.framebufferBounds(filling: size, displaySize: pixels)
+        let backing = NSView(frame: host.bounds)
+        host.addSubview(backing)
+        let geometry = VPhoneDisplayGeometry(viewBounds: backing.bounds, displaySize: pixels, isFlipped: false)
+        #expect(abs(geometry.displayRect.width - backing.bounds.width) < 1e-6)
+        #expect(abs(geometry.displayRect.height - backing.bounds.height) < 1e-6)
+        let local = backing.convert(CGPoint(x: size.width * 0.3, y: size.height * 0.2), from: viewport)
+        #expect(Self.close(geometry.normalizedPoint(local), CGPoint(x: 0.3, y: 0.8)))
+        #expect(backing.bounds == backing.frame)
+        #expect(viewport.convert(backing.bounds, from: backing) == viewport.bounds)
+    }
     /// A 1179x2556 guest at 3x in its own window.
     static let display = CGSize(width: 1179, height: 2556)
     static let window = CGRect(x: 0, y: 0, width: 393, height: 852)

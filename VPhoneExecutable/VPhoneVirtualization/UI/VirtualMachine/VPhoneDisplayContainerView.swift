@@ -33,7 +33,13 @@ final class VPhoneDisplayContainerView: NSView {
     /// Approximately 3 mm in AppKit points, independent of the guest's scale.
     var titlebarGap: CGFloat { hasRoundedScreen ? 3 * 72 / 25.4 : 0 }
     private let viewportView = NSView()
+    private let backingViewportView = NSView()
     var backingPanelSize: NSSize = .zero { didSet { needsLayout = true } }
+    /// The dynamic Duo fills its cover scanout with whichever panel is active.
+    /// Keep VZ's frame and bounds at the scanout aspect, then stretch its
+    /// ordinary AppKit parent to the logical panel. Scaling VZ's own bounds
+    /// leaves a narrow black edge in its hosted display layer.
+    var stretchesBackingToPanel = false { didSet { needsLayout = true } }
     /// The guest panel's size in points, portrait.
     var panelSize: NSSize = .zero {
         didSet { needsLayout = true }
@@ -44,6 +50,9 @@ final class VPhoneDisplayContainerView: NSView {
     /// `orientation.viewRotation` only during a turn, and may leave 0...360.
     private var angle: CGFloat = 0
     private var turn: Turn?
+    /// A quit during a turn should record its destination, never an
+    /// intermediate frame with the final orientation.
+    var destinationWindowFrame: NSRect? { turn?.toFrame }
     private var displayLink: CADisplayLink?
 
     private static let turnDuration: CFTimeInterval = 0.35
@@ -84,7 +93,9 @@ final class VPhoneDisplayContainerView: NSView {
         viewportView.wantsLayer = true
         viewportView.layer?.masksToBounds = true
         addSubview(viewportView)
-        viewportView.addSubview(displayView)
+        backingViewportView.wantsLayer = true
+        viewportView.addSubview(backingViewportView)
+        backingViewportView.addSubview(displayView)
         darkLayer.backgroundColor = NSColor.black.cgColor
         darkLayer.opacity = 0
         darkLayer.zPosition = 1000
@@ -109,6 +120,7 @@ final class VPhoneDisplayContainerView: NSView {
         self.orientation = orientation
         let target = VPhoneDisplayOrientation.turnTarget(from: angle, to: orientation.viewRotation)
         guard animated, window?.isVisible == true else {
+            turn = nil
             finishTurn(angle: target, windowFrame: windowFrame)
             return
         }
@@ -296,7 +308,15 @@ final class VPhoneDisplayContainerView: NSView {
         let scale = panelSize.width > 0 ? size.width / panelSize.width : 1
         let full = NSSize(width: backing.width * scale, height: backing.height * scale)
         displayView.frameCenterRotation = 0
-        displayView.frame = NSRect(x: 0, y: size.height - full.height, width: full.width, height: full.height)
+        backingViewportView.frame = NSRect(origin: .zero, size: size)
+        if stretchesBackingToPanel {
+            backingViewportView.bounds = VPhoneDisplayGeometry.framebufferBounds(filling: size, displaySize: backing)
+            displayView.frame = backingViewportView.bounds
+        } else {
+            backingViewportView.bounds = NSRect(origin: .zero, size: size)
+            displayView.frame = NSRect(x: 0, y: size.height - full.height, width: full.width, height: full.height)
+        }
+        displayView.bounds = NSRect(origin: .zero, size: displayView.frame.size)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         darkLayer.frame = viewportView.bounds
@@ -304,8 +324,9 @@ final class VPhoneDisplayContainerView: NSView {
         viewportView.frameCenterRotation = angle
         if let vmView = displayView as? VPhoneVirtualMachineView {
             vmView.enclosingDisplayRotation = angle
-            vmView.activePanelPixels = NSSize(width: panelSize.width * vmView.screenScale,
-                                               height: panelSize.height * vmView.screenScale)
+            let inputPanel = stretchesBackingToPanel ? backing : panelSize
+            vmView.activePanelPixels = NSSize(width: inputPanel.width * vmView.screenScale,
+                                               height: inputPanel.height * vmView.screenScale)
         }
         // The spine band hides the folded fraction of the panel and turns
         // with it: laid out in the panel's unturned space, then rotated

@@ -13,6 +13,7 @@ extension VPhoneGuestControl {
             throw ControlError.unsupportedCapability("device_pose")
         }
         var params: [String: Any] = ["position": position.rawValue]
+        let restoresCover = position == .closed && foldPosition != .closed && !isRestoringDisplayState
         if let duration {
             params["duration"] = duration
         }
@@ -36,6 +37,12 @@ extension VPhoneGuestControl {
         foldSweepSeconds = finished ? 0 : sweepMilliseconds.map { $0 < 0 ? 1.2 : $0 / 1000 } ?? 0
         foldPosition = position
         foldAngle = angle
+        if restoresCover {
+            // Publish the panel first. Its window layout then consumes this
+            // rotation together with the new panel around the fixed edge.
+            // Startup has its own saved rotation and is left to restore it.
+            try await rotate(toFirstOf: [duoCoverOrientation])
+        }
         return VPhoneFoldReply(
             position: position,
             angle: angle,

@@ -950,7 +950,7 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
         }
         return [
             "graphics_pixels": [Double(pixels.width), Double(pixels.height)],
-            "view_bounds": rect(bounds), "display_rect": rect(displayGeometry.displayRect),
+            "view_bounds": rect(bounds), "view_frame": rect(frame), "display_rect": rect(displayGeometry.displayRect),
             "view_rotation": Double(enclosingDisplayRotation ?? frameCenterRotation), "screen_orientation": screenOrientation.rawValue,
             "is_flipped": isFlipped, "mouse_uses_pointer": clicksWithGuestPointer,
         ]
