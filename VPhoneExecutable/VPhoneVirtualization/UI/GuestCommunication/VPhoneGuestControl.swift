@@ -8,7 +8,7 @@ import VPhoneCoreKit
 @MainActor
 @Observable
 final class VPhoneGuestControl {
-    enum ControlError: Error, CustomStringConvertible {
+    enum ControlError: Error, CustomStringConvertible, LocalizedError {
         case notConnected
         case unsupportedCapability(String)
         case protocolError(String)
@@ -28,11 +28,13 @@ final class VPhoneGuestControl {
             case let .guestError(value), let .bootstrapAlreadyInstalled(value), let .locationServicesOff(value): value
             }
         }
+
+        var errorDescription: String? { description }
     }
 
     /// vphoned refused an `/v1/rpc` call. `body` is its error object as sent;
     /// it came from JSON, so it serializes back unchanged.
-    struct GuestRPCFailure: Error, CustomStringConvertible, @unchecked Sendable {
+    struct GuestRPCFailure: Error, CustomStringConvertible, LocalizedError, @unchecked Sendable {
         let body: [String: Any]
 
         var message: String {
@@ -42,6 +44,8 @@ final class VPhoneGuestControl {
         var description: String {
             message
         }
+
+        var errorDescription: String? { message }
     }
 
     struct ClipboardContent {
@@ -132,7 +136,11 @@ final class VPhoneGuestControl {
         pendingRotations > 0
     }
 
-    @ObservationIgnored private var pendingRotations = 0
+    private var pendingRotations = 0
+
+    var isChangingDisplayState: Bool {
+        isRestoringDisplayState || isChangingOrientation || foldRequestsInFlight > 0
+    }
     @ObservationIgnored private var orientationObservers: [(VPhoneDisplayOrientation?) -> Void] = []
 
     func observeInterfaceOrientation(_ observer: @escaping (VPhoneDisplayOrientation?) -> Void) {
@@ -160,7 +168,7 @@ final class VPhoneGuestControl {
         didSet {
             guard foldPosition != oldValue else { return }
             if oldValue == .closed, let foldPosition, foldPosition != .closed,
-               !isRestoringDisplayState, let interfaceOrientation {
+               foldRequestsInFlight == 0, !isRestoringDisplayState, let interfaceOrientation {
                 duoCoverOrientation = interfaceOrientation
             }
             if duoStartupDisplay == .outer, let foldPosition {
@@ -173,7 +181,7 @@ final class VPhoneGuestControl {
     }
 
     /// Folds this window asked for that have not answered yet.
-    @ObservationIgnored var foldRequestsInFlight = 0
+    var foldRequestsInFlight = 0
 
     @ObservationIgnored private var foldObservers: [(Double?, Double) -> Void] = []
     @ObservationIgnored private var foldPositionObservers: [(VPhoneFoldPosition?) -> Void] = []
@@ -208,9 +216,10 @@ final class VPhoneGuestControl {
     /// every one is refused, the orientation from before is restored and the
     /// last refusal is thrown.
     func rotate(toFirstOf candidates: [VPhoneDisplayOrientation]) async throws {
+        guard foldRequestsInFlight == 0, !isChangingOrientation else {
+            throw ControlError.guestError("A display transition is already in progress. Wait for it to finish.")
+        }
         let previous = interfaceOrientation
-        pendingRotations += 1
-        defer { pendingRotations -= 1 }
         var refusal: Error = ControlError.protocolError("no orientation to rotate to")
         for orientation in candidates {
             interfaceOrientation = orientation
@@ -791,8 +800,22 @@ final class VPhoneGuestControl {
 
     /// Calls one named vphoned operation over `/v1/rpc` and returns its result object.
     func call(_ method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
+        // The Controls panel also writes rotation directly through `call`.
+        // Serialize those writes with folds and menu rotations alike.
+        let rotates = method == "display.rotation" && params["orientation"] != nil
+        if rotates {
+            guard foldRequestsInFlight == 0, !isChangingOrientation else {
+                throw ControlError.guestError("A display transition is already in progress. Wait for it to finish.")
+            }
+            pendingRotations += 1
+        }
+        defer { if rotates { pendingRotations -= 1 } }
+        var requestParams = params
+        if rotates, duoStartupDisplay == .outer {
+            requestParams["use_display_tool"] = true
+        }
         do {
-            return try await rpc(method, params: params)
+            return try await rpc(method, params: requestParams)
         } catch let failure as GuestRPCFailure {
             if failure.body["code"] as? String == "bootstrap_already_installed" {
                 throw ControlError.bootstrapAlreadyInstalled(failure.message)

@@ -3,6 +3,7 @@
 // composites the inner display onto it.
 
 #import "FoldDisplayPrivate.h"
+#import "VPhoneFoldPanelState.h"
 #include <notify.h>
 
 static void vpShowInnerDisplay(BOOL shown);
@@ -118,6 +119,10 @@ static void vpApplyPanelOwner(void) {
     BOOL innerOwns = vpInnerOwnsPanel();
     if (innerOwns == vpInnerOwnedPanel) return;
     vpInnerOwnedPanel = innerOwns;
+    CFPreferencesSetValue(CFSTR(VP_FOLD_PANEL_KEY), (__bridge CFDictionaryRef)VPhoneFoldPanelRecord(innerOwns, getpid()),
+                          CFSTR(VP_FOLD_PANEL_DOMAIN), CFSTR("mobile"), kCFPreferencesAnyHost);
+    if (!CFPreferencesSynchronize(CFSTR(VP_FOLD_PANEL_DOMAIN), CFSTR("mobile"), kCFPreferencesAnyHost))
+        vpFoldDisplayLog(@"inner display: could not publish panel ownership");
     vpFoldDisplayLog([NSString stringWithFormat:@"inner display: panel owned by the %@", innerOwns ? @"inner display" : @"cover"]);
     vpApplyPanelStates(nil, nil);
 }

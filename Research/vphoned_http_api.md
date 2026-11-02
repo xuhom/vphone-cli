@@ -1306,10 +1306,23 @@ locationd takes them itself and the virtual hinge follows each slider value (see
 | `position` | `closed` 0°, `book` ~100°, `open` 180°, or a fraction 0–1 — Apple's three screen states; requests a sweep |
 | `duration` | sweep seconds; default the per-direction hand-fold time (opening faster), 0 instant |
 | `profile` | `continuous` or `fade`, the two profiles suiatool names; default SpringBoard's own |
+| `use_display_tool` | Optional Boolean. Host controls set true to wait for SpringBoard's native screen swap even with a live CoreMotion relay, then publish the final sensor pose. If the service is unavailable, the relay remains the fallback. |
 
 The reply echoes the numeric values, the published `angle`, `source`, and
 `hinge_hid` (`applied`, `provider_running`, `provider`) describing the
 virtual hinge service, so a host can tell a live sensor from an absent one.
+`display.orientation` additionally reports `fold_sweeping` and
+`fold_current_angle` when the provider has status. `fold_angle` alone is the
+configured target and does not prove that a transition has finished.
+When SpringBoard has published a live ownership snapshot, `fold_panel` is
+`cover` or `inner`. A host display-tool swap replies `panel_verified:true`
+only after actual primary content and the requested direction have applied;
+clients must keep checking that owner rather than inferring it from the
+configured hinge angle. Ownership records include the publishing PID so a
+dead SpringBoard's state is not accepted after a restart.
+Dynamic-Duo host `display.rotation` writes also accept `use_display_tool`:
+the same native service can turn the current panel during its post-swap
+sensor deferral. Fixed-inner rotation is unchanged.
 For a `position` it carries `sweep` (`duration_ms` as requested, −1 the
 default; `profile`; `completed`, true when SpringBoard ran the fold and has
 finished it, so the host settles its chrome at once). With CoreMotion the

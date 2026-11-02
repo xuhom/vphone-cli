@@ -431,6 +431,13 @@ test-hinge:
 		-o $(OUT)/HingeTests Tests/HingeTests.m -framework Foundation
 	@$(OUT)/HingeTests
 
+.PHONY: test-fold-panel-state
+test-fold-panel-state:
+	@mkdir -p $(OUT)
+	xcrun --sdk macosx clang -fobjc-arc -Wall -Wextra -Werror \
+		-o $(OUT)/FoldPanelStateTests Tests/FoldPanelStateTests.m -framework Foundation
+	@$(OUT)/FoldPanelStateTests
+
 $(ATTITUDE): $(ATTITUDE_SOURCES) $(ATTITUDE_INPUTS) | $(STAGE)/attitude
 	$(CLANG) -arch arm64e -miphoneos-version-min=18.0 -Os -fobjc-arc \
 		-Wall -Wextra -Werror -Wno-unused-parameter -dynamiclib \

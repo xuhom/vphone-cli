@@ -21,6 +21,7 @@
 
 #import "Include/VphonedNative.h"
 #import "../../VPhoneGuestComponents/Hinge/VPhoneHingeState.h"
+#import "../../VPhoneGuestComponents/FoldDisplay/VPhoneFoldPanelState.h"
 
 #include <dlfcn.h>
 #include <errno.h>
@@ -126,6 +127,17 @@ NSDictionary<NSString *, id> *vp_device_pose_get(void) {
 }
 
 /* The virtual hinge publishes one coherent preference dictionary per update. */
+NSDictionary *vp_fold_panel_state(void) {
+    CFPreferencesSynchronize(CFSTR(VP_FOLD_PANEL_DOMAIN), CFSTR("mobile"), kCFPreferencesAnyHost);
+    id record = CFBridgingRelease(CFPreferencesCopyValue(CFSTR(VP_FOLD_PANEL_KEY),
+        CFSTR(VP_FOLD_PANEL_DOMAIN), CFSTR("mobile"), kCFPreferencesAnyHost));
+    BOOL inner = NO;
+    pid_t pid = 0;
+    if (!VPhoneFoldPanelDecode(record, &inner, &pid) || (kill(pid, 0) != 0 && errno != EPERM))
+        return @{@"available": @NO};
+    return @{@"available": @YES, @"inner": @(inner), @"pid": @(pid)};
+}
+
 NSDictionary *vp_hinge_get(void) {
     CFPreferencesSynchronize(CFSTR(VP_HINGE_DOMAIN), CFSTR("mobile"), kCFPreferencesAnyHost);
     id configuration = CFBridgingRelease(CFPreferencesCopyValue(CFSTR(VP_HINGE_CONFIGURATION),

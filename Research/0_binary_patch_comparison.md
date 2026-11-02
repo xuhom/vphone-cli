@@ -695,6 +695,19 @@
 >   `libdevicehubfix`'s CMAngleManager stand-in steps aside when CoreMotion's
 >   own manager is available.
 
+> **Duo completed host fold requests (2026-11-01):**
+> Host fold controls ask vphoned to complete the screen swap through the
+> existing `SBSDisplayToolService` before publishing the final CoreMotion
+> hinge state. The relay's target alone did not prove that SpringBoard had
+> handed primary content back to the cover; an immediate rotation then failed.
+> DeviceHub's continuous slider retains its relay path. Host fold/rotation
+> writes are serialized and guest refusal text is preserved. In 2.15.2 the
+> existing FoldDisplay hook publishes actual primary-content ownership;
+> vphoned verifies it rather than treating an instant refusal reply or hinge
+> target as proof of completion. No offline binary patch, preset, kernel
+> patch, or AX bridge is changed. See
+> `Host/duo_fold_request_failure_2026-11-01.md` for validation.
+
 > **Inner display point scale (2026-10-31, issue #784):**
 > `system-springboard-cfw-fold_display`'s `libvphonefolddisplay` now has
 > backboardd send `-[CADisplay setDisplayProperties:]` with `pointScale` 3

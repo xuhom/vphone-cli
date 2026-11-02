@@ -320,6 +320,7 @@ extension VPhoneMenuController {
               let orientation = VPhoneDisplayOrientation(degrees: degrees)
         else { return }
         Task {
+            guard !control.isChangingDisplayState else { return }
             do {
                 try await control.rotate(toFirstOf: [orientation])
             } catch {
@@ -346,6 +347,7 @@ extension VPhoneMenuController {
     /// the one after it. The window turns with the guest.
     private func rotate(clockwise: Bool) {
         Task {
+            guard !control.isChangingDisplayState else { return }
             var current = control.interfaceOrientation
             if current == nil {
                 let method = control.guestCapabilities.contains("display_orientation")

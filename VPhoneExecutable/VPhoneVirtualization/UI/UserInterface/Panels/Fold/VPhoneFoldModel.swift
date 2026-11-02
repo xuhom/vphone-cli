@@ -86,7 +86,7 @@ final class VPhoneFoldModel {
     var duration = 3.0
 
     var canFold: Bool {
-        isConnected && !isSending
+        isConnected && !isSending && !control.isChangingDisplayState
     }
 
     init(control: VPhoneGuestControl) {
@@ -108,7 +108,7 @@ final class VPhoneFoldModel {
     }
 
     func set(_ target: VPhoneFoldPosition) async {
-        guard isConnected, !isSending else { return }
+        guard canFold else { return }
         isSending = true
         do {
             let reply = try await control.setFoldPosition(target, duration: animates ? duration : 0)

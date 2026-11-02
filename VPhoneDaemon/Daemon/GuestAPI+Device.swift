@@ -83,7 +83,7 @@ extension GuestAPI {
                 return try setDuoInnerRotation(orientation)
             }
             if let orientation = optionalString(params, "orientation"), vp_hinge_get()["enabled"] as? Bool == true {
-                return try setFoldableRotation(orientation)
+                return try setFoldableRotation(orientation, usesDisplayTool: params["use_display_tool"] as? Bool == true)
             }
             if let orientation = optionalString(params, "orientation") {
                 // Preserve the physical pose across SpringBoard relaunches.
@@ -179,8 +179,19 @@ extension GuestAPI {
             "degrees": interfaceRotationDegrees().map { $0 as Any } ?? NSNull(),
             "source": "springboard",
         ]
-        if let angle = settledFoldAngle() {
+        let hinge = vp_hinge_get()
+        let panel = vp_fold_panel_state()
+        if let inner = panel["inner"] as? Bool {
+            reply["fold_panel"] = inner ? "inner" : "cover"
+        }
+        if hinge["enabled"] as? Bool == true, let angle = hinge["angle"] as? NSNumber {
             reply["fold_angle"] = angle
+            // The configuration angle is the target, not proof the provider
+            // finished moving. Hosts must not release fold controls early.
+            if let provider = hinge["provider"] as? [String: Any] {
+                reply["fold_sweeping"] = provider["sweeping"]
+                reply["fold_current_angle"] = provider["current_angle"]
+            }
             // The window covers the panel while it is off: coming on, it
             // shows its last frame from before until the guest draws again.
             reply["screen_off"] = GuestScreenUnlock.screenIsOff
@@ -344,6 +355,23 @@ extension GuestAPI {
         defer { GuestFoldPose.finishExplicitRequest(settledHinge: springBoardSwept ? Int32(hinge) : nil) }
         let published: Bool
         if relayed {
+            // A host button requests a completed screen swap, rather than a
+            // stream of physical hinge samples. CoreMotion can publish the
+            // target before SpringBoard hands primary content to that panel.
+            // Use the same synchronous service as Apple's display tool, then
+            // leave the sensor at its final pose. DeviceHub's slider retains
+            // the continuous CoreMotion path.
+            if sweep, params["use_display_tool"] as? Bool == true {
+                GuestScreenUnlock.wakeDisplay()
+                let expected = (hinge == 1 ? [1: 0, 3: 270, 4: 90] : [1: 90, 3: 0, 4: 180])[orientation]
+                springBoardSwept = try springBoardFold(
+                    to: angle!, seconds: durationMs < 0 ? -1 : durationMs / 1000,
+                    orientation: Int32(orientation),
+                    profile: profile == "fade" ? 1 : profile == "continuous" ? 2 : 0,
+                    publishesHingeTarget: false,
+                    completionIsApplied: { expected.map { interfaceRotationDegrees() == $0 } ?? true },
+                )
+            }
             if let current = vp_hinge_get()["angle"] as? Double, hingeState(for: current) == 1, hingeState(for: angle!) != 1 {
                 // Opening a closed device wakes it; the hinge sensor's own wake
                 // flag does that on hardware, and the host controls cannot set
@@ -354,7 +382,7 @@ extension GuestAPI {
                 GuestScreenUnlock.wakeDisplay()
             }
             // With the relay, the hinge is the pose.
-            published = sweep
+            published = sweep && !springBoardSwept
                 ? vp_hinge_sweep(angle!, durationMs, profile == "fade" ? 1 : 0, Int32(orientation))
                 : vp_hinge_set(angle!, Int32(orientation))
             guard published else {
@@ -396,6 +424,7 @@ extension GuestAPI {
             "hinge": hinge, "orientation": orientation, "tabletop": relayed ? NSNull() : tabletop,
             "angle": angle!, "hinge_hid": hingeHID, "source": relayed ? "coremotion" : "test-automation",
         ]
+        reply["panel_verified"] = relayed && springBoardSwept && params["use_display_tool"] as? Bool == true
         if sweep {
             reply["sweep"] = [
                 "duration_ms": durationMs,
@@ -421,23 +450,40 @@ extension GuestAPI {
     /// to the target, and an old angle lingering through the sweep sent its
     /// slider back there, folding the guest again. A fold that does not run
     /// puts the old angle back.
-    private static func springBoardFold(to angle: Double, seconds: Double, orientation: Int32, profile: Int32) throws -> Bool {
+    private static func springBoardFold(to angle: Double, seconds: Double, orientation: Int32, profile: Int32,
+                                        publishesHingeTarget: Bool = true,
+                                        completionIsApplied: () -> Bool = { true }) throws -> Bool {
         let current = (vp_hinge_get()["angle"] as? NSNumber)?.doubleValue
         let moves = current.map { abs($0 - angle) >= 1 } ?? true
         var ran = false
-        if moves { _ = vp_hinge_set(angle, 0) }
-        defer { if moves, !ran, let current { _ = vp_hinge_set(current, 0) } }
-        let deadline = Date().addingTimeInterval(10 + max(seconds, 0))
+        // With a live CoreMotion relay, publishing first would start another
+        // transition before the display tool has acquired its native swap lock.
+        if moves, publishesHingeTarget { _ = vp_hinge_set(angle, 0) }
+        defer { if moves, publishesHingeTarget, !ran, let current { _ = vp_hinge_set(current, 0) } }
+        // The native service can acknowledge a refused instant swap. A host
+        // request must see an actual ownership handoff, even for duration 0.
+        let verifiesPanel = !publishesHingeTarget
+        func panelApplied() -> Bool {
+            guard let inner = vp_fold_panel_state()["inner"] as? Bool else { return false }
+            return inner == (angle >= 5) && completionIsApplied()
+        }
+        let deadline = Date().addingTimeInterval(12 + max(seconds, 0))
+        var replied = false
         while true {
+            if verifiesPanel, replied, panelApplied() { ran = true; return true }
             let started = Date()
             switch vp_display_swap(angle / 180, seconds, orientation, profile, max(1, deadline.timeIntervalSinceNow)) {
             case -1, 0:
                 return false
             default:
-                ran = !moves || seconds == 0 || Date().timeIntervalSince(started) >= 0.3
+                replied = true
+                ran = verifiesPanel ? panelApplied() : (!moves || seconds == 0 || Date().timeIntervalSince(started) >= 0.3)
                 if ran { return true }
             }
             guard Date() < deadline else {
+                if verifiesPanel {
+                    throw GuestAPIError.operationFailed("SpringBoard did not apply the requested panel and orientation before the swap deadline")
+                }
                 throw GuestAPIError.operationFailed("SpringBoard kept refusing the fold; another fold is still running")
             }
             Thread.sleep(forTimeInterval: 0.25)
@@ -450,7 +496,7 @@ extension GuestAPI {
     /// turns it. The rotation sets the pose orientation that gives the lit
     /// panel the requested interface orientation — the inner panel is mounted
     /// a quarter turn from the cover — and reads the interface back.
-    private static func setFoldableRotation(_ spec: String) throws -> [String: Any] {
+    private static func setFoldableRotation(_ spec: String, usesDisplayTool: Bool = false) throws -> [String: Any] {
         let degreesByName = [
             "0": 0, "portrait": 0, "90": 90, "landscape-left": 90, "left": 90, "180": 180, "upside-down": 180,
             "portrait-upside-down": 180, "270": 270, "landscape-right": 270, "right": 270,
@@ -477,7 +523,8 @@ extension GuestAPI {
         }
         GuestFoldPose.cancelStartupRestore()
         defer { GuestFoldPose.finishExplicitRequest() }
-        guard try turn(to: deviceOrientation, hinge: hinge, tabletop: tabletop, reaching: { $0 == degrees }) else {
+        guard try turn(to: deviceOrientation, hinge: hinge, tabletop: tabletop,
+                       usesDisplayTool: usesDisplayTool, reaching: { $0 == degrees }) else {
             throw GuestAPIError.operationFailed("The device did not apply the requested rotation.")
         }
         var info = rotationInfo()
@@ -523,7 +570,7 @@ extension GuestAPI {
     /// has turned is it published (DeviceHub's stand-in reads it), and a
     /// refused one is put back, since SpringBoard keeps it and later folds
     /// carry it.
-    private static func turn(to deviceOrientation: Int32, hinge: Int32, tabletop: Int32,
+    private static func turn(to deviceOrientation: Int32, hinge: Int32, tabletop: Int32, usesDisplayTool: Bool = false,
                              reaching turned: (Int?) -> Bool) throws -> Bool {
         let relayed = vp_core_motion_hinge()
         if relayed, deviceOrientation == 2 {
@@ -531,6 +578,13 @@ extension GuestAPI {
         }
         let previous = (vp_device_pose_get()["device_orientation"] as? NSNumber)?.int32Value
         if relayed {
+            if usesDisplayTool, let angle = settledFoldAngle() {
+                // The display tool defers sensor input after a swap. An
+                // immediate host rotation must use that same native service.
+                _ = try springBoardFold(to: angle, seconds: 0, orientation: deviceOrientation,
+                                        profile: 0, publishesHingeTarget: false,
+                                        completionIsApplied: { turned(interfaceRotationDegrees()) })
+            }
             guard let angle = settledFoldAngle(), vp_hinge_set(angle, deviceOrientation) else {
                 throw GuestAPIError.operationFailed("The virtual hinge did not take the orientation")
             }

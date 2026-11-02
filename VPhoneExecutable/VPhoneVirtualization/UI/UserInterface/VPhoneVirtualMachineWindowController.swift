@@ -276,6 +276,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     }
 
     private func followDynamicPanel(_ position: VPhoneFoldPosition) {
+        traceFoldFrame("received \(position.rawValue)")
         guard foldableGuest, let container = displayContainer else { return }
         guard panelSize != position.panelSize else {
             pendingDuoPanel = nil
@@ -302,9 +303,16 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Close
 
-    func windowDidMove(_: Notification) { scheduleWindowStateSave() }
+    func windowDidMove(_: Notification) {
+        if NSApp.currentEvent?.type == .leftMouseDragged { settlingFoldRightEdge = nil }
+        scheduleWindowStateSave()
+    }
 
-    func windowDidResize(_: Notification) { scheduleWindowStateSave() }
+    func windowDidResize(_: Notification) {
+        if displayWindow?.inLiveResize == true { settlingFoldRightEdge = nil }
+        settleFoldAnchor()
+        scheduleWindowStateSave()
+    }
 
     func windowWillEnterFullScreen(_: Notification) {
         saveWindowState()
@@ -348,6 +356,8 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
               let scene = windowStateScene, let window = displayWindow,
               !window.isMiniaturized
         else { return }
+        settleFoldAnchor()
+        settlingFoldRightEdge = nil
         // Full screen has no ordinary window placement. Keep the last
         // windowed frame, but still remember rotations made while full screen.
         let frame: NSRect
@@ -435,6 +445,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     /// panel can grow the window when it is active, but must not make the
     /// minimum larger than this compact physical-size baseline.
     private var minimumDuoPanelSize: CGSize?
+    private var settlingFoldRightEdge: CGFloat?
     private var orientationPollInFlight = false
     private var lastPolledFoldAngle: Double?
     private var pendingDuoPanel: VPhoneFoldPosition?
@@ -468,14 +479,14 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     /// it may predate the turn.
     private func pollOrientation() {
         guard !orientationPollInFlight,
-              let control, control.isConnected, !control.isChangingOrientation,
-              !control.isRestoringDisplayState,
+              let control, control.isConnected, !control.isChangingDisplayState,
               control.guestCapabilities.contains("display_orientation")
         else { return }
         orientationPollInFlight = true
         Task {
             defer { orientationPollInFlight = false }
             guard let result = try? await control.call("display.orientation") else { return }
+            guard !control.isChangingDisplayState else { return }
             if let screenOff = result["screen_off"] as? Bool {
                 followGuestScreen(off: screenOff)
             }
@@ -483,6 +494,9 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             // moves it as it animates, so the window takes a fold once two
             // reads agree, rather than reshaping at each step of a sweep.
             if let foldAngle = (result["fold_angle"] as? NSNumber)?.doubleValue {
+                guard result["fold_sweeping"] as? Bool != true else { return }
+                if let panel = result["fold_panel"] as? String,
+                   panel != (foldAngle < 5 ? "cover" : "inner") { return }
                 let settled = foldAngle == lastPolledFoldAngle || foldAngle == control.foldAngle
                 lastPolledFoldAngle = foldAngle
                 // An external fold must settle before adopting its rotation,
@@ -512,8 +526,12 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     ) {
         guard let container = displayContainer,
               force || container.orientation != orientation || pendingDuoPanel != nil else { return }
+        if pendingDuoPanel != nil { traceFoldFrame("layout \(orientation.rawValue)") }
         let panelFrame = duoPanelFrame
         let changesPanel = pendingDuoPanel != nil
+        settlingFoldRightEdge = changesPanel
+            ? panelFrame.map { min($0.maxX, window.screen?.visibleFrame.maxX ?? $0.maxX) }
+            : nil
         if let position = pendingDuoPanel {
             panelSize = position.panelSize
             container.panelSize = panelSize
@@ -546,14 +564,20 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
                 // add a point of height on every close/open cycle.
                 let right = targetFrame.maxX.rounded()
                 let top = targetFrame.maxY.rounded()
-                targetFrame.size.width = targetFrame.width.rounded()
-                targetFrame.size.height = targetFrame.height.rounded()
+                // AppKit applies the titlebar's minimum after a frame change.
+                // Include it before anchoring, or that later growth moves the
+                // right edge (341 -> 349 pt on the compact cover).
+                let minimum = window.frameRect(forContentRect: NSRect(origin: .zero, size: window.contentMinSize)).size
+                targetFrame.size.width = max(targetFrame.width.rounded(), minimum.width.rounded(.up))
+                targetFrame.size.height = max(targetFrame.height.rounded(), minimum.height.rounded(.up))
                 targetFrame.origin = NSPoint(x: right - targetFrame.width, y: top - targetFrame.height)
             }
             if targetFrame != window.frame { frame = targetFrame }
         }
         container.turn(to: orientation, windowFrame: frame, animated: !force && !changesPanel)
+        settleFoldAnchor()
         if changesPanel { scheduleWindowStateSave() }
+        if changesPanel { traceFoldFrame("applied \(orientation.rawValue)") }
     }
 
     /// Keep a Duo window at least as large as the compact cover baseline. The
@@ -935,8 +959,9 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     /// The button presses Home through vphoned, so it is disabled and slashed
     /// while vphoned is not connected.
     private func updateHomeButton(connected: Bool) {
-        for (button, item) in zip(deviceButtons, deviceMenuItems) {
-            button.isEnabled = connected && item.isEnabled
+        for (index, pair) in zip(deviceButtons, deviceMenuItems).enumerated() {
+            let (button, item) = pair
+            button.isEnabled = connected && item.isEnabled && (index != 2 || control?.isChangingDisplayState != true)
         }
         guard let homeButton else { return }
         homeButton.isEnabled = connected
@@ -946,8 +971,8 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     private func updateFoldButton(position: VPhoneFoldPosition?, connected: Bool) {
         guard let foldButton else { return }
-        foldButton.isEnabled = connected && control?.isRestoringDisplayState != true
-            foldButton.image = Self.titlebarImage(Self.foldImage(for: position))
+        foldButton.isEnabled = connected && control?.isChangingDisplayState != true
+        foldButton.image = Self.titlebarImage(Self.foldImage(for: position))
         let title = position?.title ?? VPhoneLocalization.text("Duo Fold Posture")
         foldButton.toolTip = VPhoneLocalization.format("Duo Fold Posture: %@", title)
         foldButton.setAccessibilityValue(title)
@@ -962,13 +987,19 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     }
 
     @objc private func foldPressed() {
-        guard let control, control.isConnected, foldableGuest else { return }
+        guard let control, control.isConnected, !control.isChangingDisplayState, foldableGuest else { return }
+        traceFoldFrame("pressed")
         // The product's two stable endpoints. The transitional book posture
         // stays reachable from the Fold panel; this button only toggles.
         let next: VPhoneFoldPosition = control.foldPosition == .closed ? .open : .closed
+        // The guest can reconfigure its display while the RPC is pending.
+        // Preserve the user's anchor before that asynchronous work begins.
+        duoPanelFrame = displayWindow?.frame
         foldButton?.isEnabled = false
         Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { if self.pendingDuoPanel == nil { self.duoPanelFrame = nil } }
+            guard !control.isChangingDisplayState else { return }
             do {
                 _ = try await control.setFoldPosition(next, duration: 0)
             } catch {
@@ -977,7 +1008,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             // The posture can turn the interface; read it now rather than on
             // the next poll.
             self.pollOrientation()
-            self.updateFoldButton(position: control.foldPosition, connected: control.isConnected)
+            self.updateHomeButton(connected: control.isConnected)
         }
     }
 
@@ -991,6 +1022,26 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
                 }
             }
             : nil
+    }
+
+    private func traceFoldFrame(_ phase: String) {
+        let current = displayWindow.map { NSStringFromRect($0.frame) } ?? "none"
+        let anchor = duoPanelFrame.map(NSStringFromRect) ?? "none"
+        FileHandle.standardError.write(Data("[fold-frame] \(phase): frame=\(current) anchor=\(anchor)\n".utf8))
+    }
+
+    /// The titlebar can widen a compact cover in a later AppKit layout pass.
+    /// Keep its right edge through those resize notifications, then release
+    /// the anchor when the existing debounced state save sees the final frame.
+    private func settleFoldAnchor() {
+        guard let right = settlingFoldRightEdge, let window = displayWindow,
+              !window.styleMask.contains(.fullScreen), !window.inLiveResize else { return }
+        var origin = window.frame.origin
+        origin.x = right - window.frame.width
+        if origin != window.frame.origin {
+            window.setFrameOrigin(origin)
+            traceFoldFrame("minimum layout settled")
+        }
     }
 }
 

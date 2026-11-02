@@ -230,6 +230,8 @@ BOOL vp_accelerometer_set_orientation(NSString * _Nonnull spec);
 /// (degrees, closed 0) and whether the provider in backboardd is enumerated
 /// and current.
 NSDictionary * _Nonnull vp_hinge_get(void);
+/// SpringBoard's actual primary-content owner, independent of a hinge target.
+NSDictionary * _Nonnull vp_fold_panel_state(void);
 /// On an iPhone Duo, hand every control Xcode's DeviceHub sends (a decoded
 /// dictionary with `source`, `type` and `value`) to `handler`, on a serial
 /// queue of its own. False on any other device or without the HID API.
