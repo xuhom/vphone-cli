@@ -24,6 +24,7 @@ public enum FirmwareGuestSystemPatchSet {
     public static let homePodInstallPersonaLibrary = "/usr/lib/libvphoneinstallpersona.dylib"
     public static let homePodAdHocInstall = "system-installd-exp-homepod_adhoc"
     public static let homePodMISFixLibrary = "/usr/lib/libvphonehomepodmisfix.dylib"
+    public static let ios17Desktop = "system-springboard-exp-ios17_desktop"
     public static let metalCacheReuse = "system-systemhook-cfw-metal_cache_reuse"
     public static let metalCacheReuseMarker = "/usr/lib/vphone-metal-cache-reuse"
     public static let gyroscope = "system-backboardd-cfw-gyroscope"
@@ -45,6 +46,7 @@ public enum FirmwareGuestSystemPatchSet {
     public static let ciBarcodeExecutablePath = ciBarcodeBundlePath + "/CIBarcode"
 
     public static let paravirtGPUIndexOffset = "system-paravirt_gpu-cfw-heap_index_offset"
+    public static let paravirtGPUPrimitiveRestart = "system-paravirt_gpu-cfw-primitive_restart"
     public static let paravirtGPUDriverPath =
         "System/Library/Extensions/AppleParavirtGPUMetalIOGPUFamily.bundle/AppleParavirtGPUMetalIOGPUFamily"
 
@@ -96,6 +98,13 @@ public enum FirmwareGuestSystemPatchSet {
         name: "Guest System",
         summary: "Shared-cache policy gates, patched system daemons and the vphone guest payload",
         patches: [
+            VPhonePatchDeclaration(
+                identifier: ios17Desktop,
+                title: "iOS 17 desktop bring-up",
+                summary: "Skips unavailable flashlight construction and synchronous widget discovery that stall SpringBoard on iOS 17 research guests. Widgets and flashlight are unavailable while selected. Experimental, off by default.",
+                target: .guestExecutable(path: "/System/Library/CoreServices/SpringBoard.app/SpringBoard"),
+                applicability: VPhonePatchApplicability(iOSBase: .major(17)),
+            ),
             VPhonePatchDeclaration(
                 identifier: homeViewEnvironmentService,
                 title: "HomeView distance simulation service",
@@ -452,6 +461,17 @@ public enum FirmwareGuestSystemPatchSet {
                 compact command keeps an index buffer's heap offset in 16 bits, so meshes whose \
                 indices sit 64 KiB or more into an MTLHeap (Unity games) draw with another \
                 mesh's indices.
+                """,
+                target: .guestExecutable(path: "/\(paravirtGPUDriverPath)"),
+                applicability: VPhonePatchApplicability(cloudOS: .release(major: 26, minor: 4)),
+            ),
+            VPhonePatchDeclaration(
+                identifier: paravirtGPUPrimitiveRestart,
+                title: "GPU primitive restart",
+                summary: """
+                Stops the paravirtual GPU driver sending the primitive restart override OpenGL ES \
+                sets before its draws. The host checks its restart index as if it were a viewport \
+                index and fails the whole command buffer, so nothing an OpenGL ES app draws appears.
                 """,
                 target: .guestExecutable(path: "/\(paravirtGPUDriverPath)"),
                 applicability: VPhonePatchApplicability(cloudOS: .release(major: 26, minor: 4)),

@@ -65,13 +65,22 @@ struct FirmwareCatalogReportTests {
 
     @Test func `lists every curated guest`() {
         let report = VPhoneFirmwareCatalog.report(hostMacOS: 27)
-        #expect(report.devices.map(\.productType) == VPhoneGuestDevice.known.map(\.productType))
+        // iOS 17 desktop bring-up requires explicit sources and is not an
+        // automatic catalog pairing, despite having a known device identity.
+        let curated = VPhoneGuestDevice.known.filter { $0 != .iPhone15_4 }
+        #expect(report.devices.map(\.productType) == curated.map(\.productType))
         #expect(report.devices.first?.pairings == report.pairings)
         for device in report.devices.dropFirst() {
             #expect(device.family == VPhoneGuestDevice.named(device.productType)?.family.rawValue)
             #expect(!device.pairings.isEmpty)
             #expect(device.name == VPhoneGuestDevice.named(device.productType)?.productName)
         }
+    }
+
+    @Test func `experimental i phone 15 requires explicit firmware sources`() {
+        #expect(VPhoneGuestDevice.known.contains(.iPhone15_4))
+        #expect(VPhoneFirmwareCatalog.pairings(for: "iPhone15,4", hostMacOS: 27).isEmpty)
+        #expect(!VPhoneFirmwareCatalog.report(hostMacOS: 27).devices.contains { $0.productType == "iPhone15,4" })
     }
 
     @Test func `the Apple TV 4K pairs each OTA with the Apple TV HD IPSW it is restored over`() throws {
@@ -236,7 +245,7 @@ struct FirmwareCatalogReportTests {
     }
 
     @Test func `other i phones have pairings of their own`() {
-        for guest in VPhoneGuestDevice.known where guest.family == .iPhone && guest.presentsBoard && guest != .iPhone17_3 {
+        for guest in VPhoneGuestDevice.known where guest.family == .iPhone && guest.presentsBoard && guest != .iPhone17_3 && guest != .iPhone15_4 {
             let pairings = VPhoneFirmwareCatalog.pairings(for: guest.productType)
             let firstRelease = switch guest.productType {
             case "iPhone18,5": "iOS 26.3.1"

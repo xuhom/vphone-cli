@@ -8,6 +8,7 @@
 
 static void vpShowInnerDisplay(BOOL shown);
 static void vpFollowInnerPages(void);
+static void vpPublishPanelOwner(BOOL innerOwns);
 
 // MARK: - power
 
@@ -53,6 +54,10 @@ static void vpApplyPanelState(id control, long long state, long long *applied, i
 
 static void vpApplyPanelStates(id primaryCompletion, id innerCompletion) {
     BOOL innerOwns = vpInnerOwnsPanel();
+    // A continuous fold can commit primary ownership after the swap observer
+    // returns. Its later power request already sees the committed owner and
+    // updates the compositor here; publish that same observation as well.
+    vpPublishPanelOwner(innerOwns);
     vpApplyPanelState(vpPrimaryStateControl, (innerOwns ? vpInnerWantedState : vpPrimaryWantedState) ? 1 : 0,
         &vpPrimaryAppliedState, primaryCompletion);
     long long inner = innerOwns && vpInnerWantedState ? 1 : 0;
@@ -115,8 +120,7 @@ static void vpSharedScanoutTransition(id self, SEL selector, long long state, id
 static IMP vpOriginalPerformContentModeTransition, vpOriginalHandlePrimarySwap;
 static int vpInnerOwnedPanel = -1;
 
-static void vpApplyPanelOwner(void) {
-    BOOL innerOwns = vpInnerOwnsPanel();
+static void vpPublishPanelOwner(BOOL innerOwns) {
     if (innerOwns == vpInnerOwnedPanel) return;
     vpInnerOwnedPanel = innerOwns;
     CFPreferencesSetValue(CFSTR(VP_FOLD_PANEL_KEY), (__bridge CFDictionaryRef)VPhoneFoldPanelRecord(innerOwns, getpid()),
@@ -124,6 +128,9 @@ static void vpApplyPanelOwner(void) {
     if (!CFPreferencesSynchronize(CFSTR(VP_FOLD_PANEL_DOMAIN), CFSTR("mobile"), kCFPreferencesAnyHost))
         vpFoldDisplayLog(@"inner display: could not publish panel ownership");
     vpFoldDisplayLog([NSString stringWithFormat:@"inner display: panel owned by the %@", innerOwns ? @"inner display" : @"cover"]);
+}
+
+static void vpApplyPanelOwner(void) {
     vpApplyPanelStates(nil, nil);
 }
 

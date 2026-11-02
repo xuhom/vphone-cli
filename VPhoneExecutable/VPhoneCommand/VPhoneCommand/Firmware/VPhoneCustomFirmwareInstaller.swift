@@ -1323,6 +1323,7 @@ struct VPhoneCustomFirmwareInstaller {
                     && identifier != FirmwareGuestSystemPatchSet.attitude
                     && identifier != FirmwareGuestSystemPatchSet.hinge
                     && identifier != FirmwareGuestSystemPatchSet.foldGuard
+                    && identifier != FirmwareGuestSystemPatchSet.ios17Desktop
             }
             guard plan.isEnabled(identifier) else {
                 print("  [·] \(identifier): off in preset \(plan.presetIdentifier)")
@@ -1715,6 +1716,29 @@ struct VPhoneCustomFirmwareInstaller {
             }
         }
 
+        // iOS 17 does not reliably propagate the spawn hook to SpringBoard.
+        // Keep the weak load owned by this selection, with the original binary
+        // backed up by the same mechanism as the other executable patches.
+        let desktop = FirmwareGuestSystemPatchSet.ios17Desktop
+        isolate([desktop]) {
+            let path = "System/Library/CoreServices/SpringBoard.app/SpringBoard"
+            let library = "libvphoneios17desktop.dylib"
+            if on(desktop) {
+                try system.replaceFile("usr/lib/" + library, fromFileAt: VPhoneGuestBinaries.resolve(library), mode: 0o755, owner: Self.guestOwner)
+                try patchMachO(system: system, work: work, path: path,
+                               preserveEntitlements: true, injectedDylibPath: "/usr/lib/" + library)
+                live.insert(desktop)
+            } else {
+                if priorGuest.contains(desktop) {
+                    guard try revertMachO(system: system, work: work, path: path) else {
+                        live.insert(desktop)
+                        throw ValidationError("iOS 17 desktop workaround has no SpringBoard backup; cannot safely remove its library.")
+                    }
+                }
+                try system.removeItem("usr/lib/" + library)
+            }
+        }
+
         // 2. The dyld shared cache. The version branches and the declarations'
         //    applicability say the same thing; this is what a VM with no plan
         //    still follows.
@@ -1729,7 +1753,7 @@ struct VPhoneCustomFirmwareInstaller {
                 ("dyld-boot-xpc_lwcr", "patch-xpc-lwcr", [dsc]),
                 ("dyld-boot-lockdown_mode", "patch-lockdown-mode", [dsc]),
             ]
-        } else if version.hasPrefix("26.0") || version.hasPrefix("18.") {
+        } else if version.hasPrefix("26.0") || version.hasPrefix("18.") || version.hasPrefix("17.") {
             dyld.append(("dyld-boot-iomfb_swapend", "patch-iomfb-swapend", [dsc, "--target-size", "0x560"]))
         }
         dyld += [
@@ -1877,7 +1901,9 @@ struct VPhoneCustomFirmwareInstaller {
 
         // The paravirtual GPU bundle comes from the restore tree, so an
         // environment update cannot (re)install it; an installed guest already
-        // carries it, so record it live when on and skip with a note.
+        // carries it, so record it live when on and skip with a note. Its
+        // compiler plugin is this project's own build, so an update still
+        // brings that one up to date.
         var gpuBundleReinstalled = false
         if on("system-extensions-boot-gpu_bundle") {
             isolate(["system-extensions-boot-gpu_bundle"]) {
@@ -1889,33 +1915,47 @@ struct VPhoneCustomFirmwareInstaller {
                     gpuBundleReinstalled = true
                 } else {
                     print("  [·] system-extensions-boot-gpu_bundle: no restore tree; GPU bundle left as installed")
+                    if !guestDevice.usesTVOS, try refreshGPUCompilerPlugin(system: system) {
+                        print("  [+] system-extensions-boot-gpu_bundle: compiler plugin updated from this bundle")
+                    }
                 }
                 live.insert("system-extensions-boot-gpu_bundle")
             }
         }
 
         // The driver's compact indexed-draw commands truncate a heap index
-        // buffer's offset to 16 bits. After the bundle step on purpose:
+        // buffer's offset to 16 bits, and its primitive restart override is
+        // one the host refuses. After the bundle step on purpose:
         // `installGPUBundle` replaces the whole bundle, `.bak` included, so the
         // backup taken here is always the staged driver — and a bundle it just
-        // reinstalled is already pristine, which is what "off" means.
-        let gpuIndexOffset = FirmwareGuestSystemPatchSet.paravirtGPUIndexOffset
+        // reinstalled is already pristine, which is what "off" means. Both ride
+        // one staged copy: `patchMachO` stages from the pristine backup, so two
+        // calls would not compose.
+        let gpuDriverPatches: [(id: String, verb: String)] = [
+            (FirmwareGuestSystemPatchSet.paravirtGPUIndexOffset, "patch-paravirt-gpu-index-offset"),
+            (FirmwareGuestSystemPatchSet.paravirtGPUPrimitiveRestart, "patch-paravirt-gpu-primitive-restart"),
+        ]
         let gpuDriver = FirmwareGuestSystemPatchSet.paravirtGPUDriverPath
         let gpuBundle = "System/Library/Extensions/\(VPhonePCCGPUDriver.name)"
-        isolate([gpuIndexOffset]) {
-            if on(gpuIndexOffset) {
+        let gpuDriverOn = gpuDriverPatches.filter { on($0.id) }
+        isolate(gpuDriverPatches.map(\.id)) {
+            if !gpuDriverOn.isEmpty {
                 try patchMachO(
                     system: system, work: work, path: gpuDriver,
-                    verbs: ["patch-paravirt-gpu-index-offset"],
+                    verbs: gpuDriverOn.map(\.verb),
                     identifier: "com.apple.driver.AppleParavirtGPUMetalIOGPUFamily",
                 )
                 try sealGuestBundle(system: system, bundle: gpuBundle)
-                live.insert(gpuIndexOffset)
+                for patch in gpuDriverOn {
+                    live.insert(patch.id)
+                }
             } else if try revertMachO(system: system, work: work, path: gpuDriver, bundle: gpuBundle) {
-                print("  [+] \(gpuIndexOffset): restored \(gpuDriver) from backup")
-            } else if priorGuest.contains(gpuIndexOffset), !gpuBundleReinstalled {
-                print("  [!] \(gpuIndexOffset): off now but no backup to revert; leaving the patched driver (not revertible)")
-                live.insert(gpuIndexOffset)
+                print("  [+] \(gpuDriver) restored from backup (heap index and primitive restart patches off)")
+            } else if !gpuBundleReinstalled {
+                for patch in gpuDriverPatches where priorGuest.contains(patch.id) {
+                    print("  [!] \(patch.id): off now but no backup to revert; leaving the patched driver (not revertible)")
+                    live.insert(patch.id)
+                }
             }
         }
 
@@ -2085,7 +2125,7 @@ struct VPhoneCustomFirmwareInstaller {
 
         try requireX1Bootstrap()
         if !isHomePod {
-            isolate([]) { try restoreMISFixTargets(system: system) }
+            isolate([]) { try restoreMISFixTargets(system: system, preserveSpringBoard: on(FirmwareGuestSystemPatchSet.ios17Desktop)) }
         }
 
         // HomePod has no misagent/provisioning service. Its research SDK signs
@@ -2729,6 +2769,21 @@ struct VPhoneCustomFirmwareInstaller {
         }
     }
 
+    /// Replace an installed guest's compiler plugin with this bundle's when
+    /// they differ, and seal the GPU bundle again. True when it was replaced.
+    private func refreshGPUCompilerPlugin(system: VPhoneConfinedDirectory) throws -> Bool {
+        let gpu = "System/Library/Extensions/\(VPhonePCCGPUDriver.name)"
+        let plugin = "\(gpu)/libAppleParavirtCompilerPluginIOGPUFamily.dylib"
+        let source = resources.gpuCompilerPlugin
+        guard try system.isRegularFile(plugin),
+              FileManager.default.fileExists(atPath: source.path),
+              try system.readData(plugin) != Data(contentsOf: source)
+        else { return false }
+        try system.replaceFile(plugin, fromFileAt: source, mode: 0o755, owner: Self.guestOwner)
+        try sealGuestBundle(system: system, bundle: gpu)
+        return true
+    }
+
     /// The staged OTA, the configured device and the patched target firmware
     /// must all name the same 27.x build before System is replaced.
     private func requireOTAUpdate(
@@ -3239,13 +3294,15 @@ struct VPhoneCustomFirmwareInstaller {
     /// A guest installed before that still carries a load command in each, and
     /// `patchMachO` left the original beside it as `.bak`. The `/mf` alias
     /// existed only for SpringBoard's.
-    private func restoreMISFixTargets(system: VPhoneConfinedDirectory) throws {
+    private func restoreMISFixTargets(system: VPhoneConfinedDirectory, preserveSpringBoard: Bool = false) throws {
         let targets = [
             "usr/libexec/installd",
             "usr/libexec/misagent",
             "System/Library/CoreServices/SpringBoard.app/SpringBoard",
         ]
         for path in targets where try system.isRegularFile("\(path).bak") {
+            // The iOS 17 desktop selection owns this executable and its backup.
+            if preserveSpringBoard && path == "System/Library/CoreServices/SpringBoard.app/SpringBoard" { continue }
             try system.rename("\(path).bak", to: path)
             print("  [+] \(path): restored the original, libmisfix is inserted at spawn")
         }
