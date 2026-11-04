@@ -34,8 +34,10 @@ restarted on it with the saved pin enabled; the live diagnostics report
 capture in the background. Both existing machines are bound to this host
 bundle. The iPhone/iPad guest resources are unchanged (only the unrelated TV
 daemon's rebuilt bytes differ), so no guest environment reinstall was needed.
-Physical Command-Tab validation is requested from the owner: background-targeted
-desktop automation does not exercise WindowServer's app-switcher routing.
+The owner completed the physical-keyboard check on 2026-11-04: after clicking
+the pinned Duo window, Command-Tab successfully switched to other Mac apps.
+This closes the app-switcher acceptance check that background-targeted desktop
+automation could not exercise.
 
 Ordinary virtual-keyboard input was also checked with capture disabled: focus
 Settings' search field, send `a` through the existing `hostkey`/VZ keyboard
