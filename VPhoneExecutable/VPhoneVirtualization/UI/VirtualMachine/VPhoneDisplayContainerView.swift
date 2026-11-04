@@ -28,7 +28,6 @@ final class VPhoneDisplayContainerView: NSView {
         didSet { needsLayout = true }
     }
     var hasRoundedScreen: Bool { isPhoneGuest || isPadGuest }
-    private let phoneOverlay = CAShapeLayer()
     private let screenMask = CAShapeLayer()
     /// Approximately 3 mm in AppKit points, independent of the guest's scale.
     var titlebarGap: CGFloat { hasRoundedScreen ? 3 * 72 / 25.4 : 0 }
@@ -101,10 +100,6 @@ final class VPhoneDisplayContainerView: NSView {
         darkLayer.zPosition = 1000
         viewportView.layer?.addSublayer(darkLayer)
         installFoldChrome()
-        displayView.wantsLayer = true
-        phoneOverlay.fillColor = NSColor.black.cgColor
-        phoneOverlay.zPosition = 1
-        displayView.layer?.addSublayer(phoneOverlay)
     }
 
     @available(*, unavailable)
@@ -342,36 +337,7 @@ final class VPhoneDisplayContainerView: NSView {
             height: viewportView.frame.height,
         )
         creaseLayer.transform = CATransform3DMakeRotation(angle * .pi / 180, 0, 0, 1)
-        updatePhoneOverlay()
-    }
-
-    /// Draw in the unturned panel's coordinates so the hardware silhouette
-    /// follows the display through resizing, full screen and orientation changes.
-    private func updatePhoneOverlay() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
-        phoneOverlay.isHidden = !isPhoneGuest || isDuoGuest
         updateScreenMask()
-        guard isPhoneGuest, !isDuoGuest else { return }
-        let rect = displayView.bounds
-        guard rect.width > 0, rect.height > 0 else { return }
-        phoneOverlay.frame = rect
-        let local = CGRect(origin: .zero, size: rect.size)
-        let path = CGMutablePath()
-        // Proportions of the reference iPhone screen; scale with the panel,
-        // rather than with the Mac's backing scale or titlebar height.
-        let width = local.width * 0.214
-        let height = local.width * 0.08
-        let inset = local.width * 0.034
-        let island = CGRect(
-            x: (local.width - width) / 2,
-            y: displayView.isFlipped ? inset : local.height - inset - height,
-            width: width,
-            height: height,
-        )
-        path.addRoundedRect(in: island, cornerWidth: height / 2, cornerHeight: height / 2)
-        phoneOverlay.path = path
     }
 
     /// Clip the entire panel, including its hosted VM sublayers, in the
@@ -379,6 +345,12 @@ final class VPhoneDisplayContainerView: NSView {
     /// four physical corners aligned during rotation and window resizing.
     /// A clear window behind it makes the removed corners transparent.
     private func updateScreenMask() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        // The displayed framebuffer already includes the native iPhone island.
+        // Guest screenshots omit it; adding a host capsule based on those
+        // screenshots produces two silhouettes with different sizes/insets.
         layer?.backgroundColor = (hasRoundedScreen ? NSColor.clear : NSColor.black).cgColor
         guard hasRoundedScreen else {
             layer?.mask = nil
