@@ -25,7 +25,7 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     func setMouseCaptured(_ captured: Bool) {
         guard captured != isMouseCaptured else { return }
         if captured {
-            guard window?.isKeyWindow == true, control?.supportsPointerScroll == true else { return }
+            guard NSApp.isActive, window?.isKeyWindow == true, control?.supportsPointerScroll == true else { return }
             finishScrollTouch()
             releaseSecondaryPress()
             endNativeScroll()
@@ -1015,6 +1015,9 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
             "view_bounds": rect(bounds), "view_frame": rect(frame), "display_rect": rect(displayGeometry.displayRect),
             "view_rotation": Double(enclosingDisplayRotation ?? frameCenterRotation), "screen_orientation": screenOrientation.rawValue,
             "is_flipped": isFlipped, "mouse_uses_pointer": clicksWithGuestPointer,
+            "app_active": NSApp.isActive, "window_key": window?.isKeyWindow == true,
+            "system_keys_captured": capturesSystemKeys, "mouse_captured": isMouseCaptured,
+            "host_hotkeys_suspended": VPhoneHostHotKeys.shared.isSuspended,
         ]
     }
 

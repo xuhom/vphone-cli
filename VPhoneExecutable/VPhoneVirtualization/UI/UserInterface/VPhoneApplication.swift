@@ -125,6 +125,9 @@ final class VPhoneApplication: NSApplication {
     /// A rebuilt VM must not inherit keys or a guest connection from the old one.
     func resetGuestKeyState() {
         releaseGlobe(leavingWindow: true)
+        for key in forwardedKeys.values {
+            key.control.sendHIDUp(page: key.usage.page, usage: key.usage.usage)
+        }
         forwardedKeys.removeAll()
         menuKeyCodes.removeAll()
     }

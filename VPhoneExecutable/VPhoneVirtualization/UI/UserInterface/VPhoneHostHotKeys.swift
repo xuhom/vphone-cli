@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 
 // MARK: - Host Hot Keys
 
-/// Holds back the Mac's own keyboard shortcuts while a VM window is key.
+/// Holds back Mac shortcuts only for an active, key, unpinned VM window.
 ///
 /// macOS handles its symbolic hot keys — Spotlight, input-source switching,
 /// the 🌐 shortcuts — in the window server, before the VM window's event
@@ -24,6 +24,7 @@ final class VPhoneHostHotKeys {
 
     private var token: UnsafeMutableRawPointer?
     private var reportedUntrusted = false
+    var isSuspended: Bool { token != nil }
 
     private init() {}
 

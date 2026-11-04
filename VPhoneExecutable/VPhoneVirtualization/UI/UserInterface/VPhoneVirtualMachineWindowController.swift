@@ -82,7 +82,8 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         let view = VPhoneVirtualMachineView()
         view.virtualMachine = vm
         view.hardwareKeyboardEnabled = hardwareKeyboardEnabled
-        view.capturesSystemKeys = hardwareKeyboardEnabled && !homePodGuest
+        // Capture only after the display is key in an active application.
+        view.capturesSystemKeys = false
         view.keySender = keySender
         view.control = control
         view.screenScale = CGFloat(screenScale)
@@ -218,6 +219,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             monitor.start(control: control, window: window)
             touchIDMonitor = monitor
         }
+        updateKeyboardCapture()
 
         // Poll vphoned status for the Home button and the subtitle
         timers.append(Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -358,6 +360,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             window.level = enabled ? .floating : .normal
             if enabled { window.orderFront(nil) }
         }
+        updateKeyboardCapture()
         saveWindowState()
     }
 
@@ -439,6 +442,8 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         NotificationCenter.default.removeObserver(self)
         touchIDMonitor?.stop()
         touchIDMonitor = nil
+        captureView?.capturesSystemKeys = false
+        captureView?.setMouseCaptured(false)
         captureView?.virtualMachine = nil
         captureView?.keySender = nil
         captureView?.control = nil
@@ -613,28 +618,35 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Mac Shortcuts
 
-    /// The Mac's own shortcuts on keys the guest uses are off while this window
-    /// is key; see `VPhoneHostHotKeys`.
+    /// A floating window can remain key while its application is inactive.
+    /// Window focus alone must never leave the guest capturing the Mac's keys.
     private func observeKeyState(of window: NSWindow) {
         let center = NotificationCenter.default
         keyStateObservers.append(center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                if self?.homePodGuest == false, self?.captureView?.hardwareKeyboardEnabled == true {
-                    VPhoneHostHotKeys.shared.suspend()
-                }
-            }
+            MainActor.assumeIsolated { self?.updateKeyboardCapture() }
         })
         for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification] {
             keyStateObservers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    self?.captureView?.capturesSystemKeys = false
                     self?.captureView?.setMouseCaptured(false)
+                    (NSApp as? VPhoneApplication)?.resetGuestKeyState()
                     VPhoneHostHotKeys.shared.resume()
                 }
             })
         }
-        if window.isKeyWindow, !homePodGuest, captureView?.hardwareKeyboardEnabled == true {
-            VPhoneHostHotKeys.shared.suspend()
-        }
+        keyStateObservers.append(center.addObserver(forName: NSApplication.willResignActiveNotification, object: NSApp, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.captureView?.capturesSystemKeys = false
+                self?.captureView?.setMouseCaptured(false)
+                (NSApp as? VPhoneApplication)?.resetGuestKeyState()
+                VPhoneHostHotKeys.shared.resume()
+            }
+        })
+        keyStateObservers.append(center.addObserver(forName: NSApplication.didBecomeActiveNotification, object: NSApp, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateKeyboardCapture() }
+        })
+        updateKeyboardCapture()
 
         // A guest copy made while this window is key reaches the Mac when it
         // resigns key; see `VPhoneClipboardSync`.
@@ -644,6 +656,21 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         keyStateObservers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.captureView?.clipboardSync?.bringGuestCopyToMac() }
         })
+    }
+
+    private func updateKeyboardCapture() {
+        let focused = NSApp.isActive && displayWindow?.isKeyWindow == true
+        // A pinned phone is an overlay on the Mac's other applications:
+        // system shortcuts such as Command-Tab must remain with the host.
+        let capture = focused && !alwaysOnTop && !homePodGuest &&
+            captureView?.hardwareKeyboardEnabled == true
+        captureView?.capturesSystemKeys = capture
+        if capture {
+            VPhoneHostHotKeys.shared.suspend()
+        } else {
+            VPhoneHostHotKeys.shared.resume()
+        }
+        if !focused { captureView?.setMouseCaptured(false) }
     }
 
     // MARK: - Title
