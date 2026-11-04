@@ -8,11 +8,26 @@ public struct VPhoneWindowState: Codable, Equatable, Sendable {
     public let frame: CGRect
     public let orientation: VPhoneDisplayOrientation
     public let panelSize: CGSize?
+    public let alwaysOnTop: Bool
 
-    public init(frame: CGRect, orientation: VPhoneDisplayOrientation, panelSize: CGSize? = nil) {
+    public init(frame: CGRect, orientation: VPhoneDisplayOrientation, panelSize: CGSize? = nil, alwaysOnTop: Bool = false) {
         self.frame = frame
         self.orientation = orientation
         self.panelSize = panelSize
+        self.alwaysOnTop = alwaysOnTop
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case frame, orientation, panelSize, alwaysOnTop
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        frame = try values.decode(CGRect.self, forKey: .frame)
+        orientation = try values.decode(VPhoneDisplayOrientation.self, forKey: .orientation)
+        panelSize = try values.decodeIfPresent(CGSize.self, forKey: .panelSize)
+        // Older records still restore their frame and rotation.
+        alwaysOnTop = try values.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) ?? false
     }
 
     private var isValid: Bool {

@@ -39,6 +39,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     private var fullScreenTransition = false
     private var windowStateSave: DispatchWorkItem?
     private var lastWindowedFrame: NSRect?
+    private var alwaysOnTop = false
 
     var captureView: VPhoneVirtualMachineView? {
         virtualMachineView
@@ -71,6 +72,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         windowStateReady = false
         windowStateScene = sceneIdentifier
         let savedState = VPhoneWindowState.load(scene: sceneIdentifier, defaults: windowStateDefaults)
+        alwaysOnTop = savedState?.alwaysOnTop ?? false
         let initialOrientation = homePodGuest ? .portrait : savedState?.orientation ?? .portrait
         if !homePodGuest { control.startupOrientation = savedState?.orientation }
         machineDirectory = URL(fileURLWithPath: sceneIdentifier)
@@ -145,7 +147,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.level = .normal
+        window.level = alwaysOnTop ? .floating : .normal
         VPhoneAlert.hostWindow = window
         if displayContainer?.hasRoundedScreen != true {
             window.contentAspectRatio = initialOrientation.displayedSize(panel: windowSize)
@@ -329,6 +331,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     func windowDidExitFullScreen(_: Notification) {
         fullScreenTransition = false
+        displayWindow?.level = alwaysOnTop ? .floating : .normal
         displayContainer?.needsLayout = true
         windowController?.window?.invalidateShadow()
         scheduleWindowStateSave()
@@ -349,19 +352,27 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
+    func setAlwaysOnTop(_ enabled: Bool) {
+        alwaysOnTop = enabled
+        if let window = displayWindow, !window.styleMask.contains(.fullScreen) {
+            window.level = enabled ? .floating : .normal
+            if enabled { window.orderFront(nil) }
+        }
+        saveWindowState()
+    }
+
     func saveWindowState() {
         windowStateSave?.cancel()
         windowStateSave = nil
         guard windowStateReady, !fullScreenTransition,
-              let scene = windowStateScene, let window = displayWindow,
-              !window.isMiniaturized
+              let scene = windowStateScene, let window = displayWindow
         else { return }
         settleFoldAnchor()
         settlingFoldRightEdge = nil
         // Full screen has no ordinary window placement. Keep the last
         // windowed frame, but still remember rotations made while full screen.
         let frame: NSRect
-        if window.styleMask.contains(.fullScreen) {
+        if window.styleMask.contains(.fullScreen) || window.isMiniaturized {
             guard let lastWindowedFrame else { return }
             frame = lastWindowedFrame
         } else {
@@ -372,6 +383,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             frame: frame,
             orientation: displayContainer?.orientation ?? .portrait,
             panelSize: panelSize,
+            alwaysOnTop: alwaysOnTop,
         )
         do {
             try state.save(scene: scene, defaults: windowStateDefaults)

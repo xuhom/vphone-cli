@@ -111,6 +111,7 @@ class VPhoneMenuController {
         }
     }
     private var alwaysOnTopItem: NSMenuItem?
+    var onAlwaysOnTopChange: ((Bool) -> Void)?
     var cameraServer: VPhoneCameraServer? {
         didSet {
             cameraServer?.onSourceStateChange = { [weak self] in self?.updateCameraSourceState() }
@@ -233,11 +234,10 @@ class VPhoneMenuController {
     }
 
     @objc private func toggleAlwaysOnTop() {
-        guard let displayWindow else { return }
-        let enabled = displayWindow.level != .floating
-        displayWindow.level = enabled ? .floating : .normal
+        guard displayWindow != nil, let onAlwaysOnTopChange else { return }
+        let enabled = alwaysOnTopItem?.state != .on
+        onAlwaysOnTopChange(enabled)
         alwaysOnTopItem?.state = enabled ? .on : .off
-        if enabled { displayWindow.orderFront(nil) }
     }
 
     /// "2.3.2 (26, 735927f)": the bundle version, its build number and the

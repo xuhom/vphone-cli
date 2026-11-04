@@ -282,6 +282,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
             }
             mc.captureView = wc.captureView
             mc.displayWindow = wc.displayWindow
+            mc.onAlwaysOnTopChange = { [weak wc] enabled in wc?.setAlwaysOnTop(enabled) }
             mc.showsTVControls = options.isTVGuest
             mc.showsWatchControls = options.isWatchGuest
             mc.touchIDMonitor = wc.touchIDMonitor

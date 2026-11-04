@@ -3,20 +3,32 @@ import Testing
 @testable import VPhoneCoreKit
 
 struct WindowStateTests {
-    @Test(arguments: VPhoneDisplayOrientation.allCases)
-    func `each VM keeps its frame and all four rotations across sessions`(orientation: VPhoneDisplayOrientation) throws {
+    @Test(arguments: VPhoneDisplayOrientation.allCases, [false, true])
+    func `each VM keeps its frame rotation and pin state across sessions`(orientation: VPhoneDisplayOrientation, pinned: Bool) throws {
         let suite = "VPhoneWindowStateTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let state = VPhoneWindowState(frame: CGRect(x: -1200, y: 137, width: 840, height: 620), orientation: orientation,
-                                     panelSize: CGSize(width: 669, height: 951))
+                                     panelSize: CGSize(width: 669, height: 951), alwaysOnTop: pinned)
         try state.save(scene: "/machines/Duo", defaults: defaults)
-        let other = VPhoneWindowState(frame: CGRect(x: 92, y: 60, width: 650, height: 900), orientation: .portrait)
+        let other = VPhoneWindowState(frame: CGRect(x: 92, y: 60, width: 650, height: 900), orientation: .portrait, alwaysOnTop: !pinned)
         try other.save(scene: "/machines/iPad", defaults: defaults)
         let nextSession = try #require(UserDefaults(suiteName: suite))
         #expect(VPhoneWindowState.load(scene: "/machines/Duo", defaults: nextSession) == state)
         #expect(VPhoneWindowState.load(scene: "/machines/iPad", defaults: nextSession) == other)
         #expect(VPhoneWindowState.load(scene: "/machines/New", defaults: nextSession) == nil)
+    }
+
+    @Test func `records from before pinning retain their geometry and default to unpinned`() throws {
+        let state = VPhoneWindowState(frame: CGRect(x: -40, y: 80, width: 620, height: 900), orientation: .landscapeRight,
+                                     panelSize: CGSize(width: 669, height: 951))
+        let data = try PropertyListEncoder().encode(state)
+        var legacy = try #require(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+        legacy.removeValue(forKey: "alwaysOnTop")
+        let restored = try PropertyListDecoder().decode(VPhoneWindowState.self, from:
+            PropertyListSerialization.data(fromPropertyList: legacy, format: .binary, options: 0))
+        #expect(restored == state)
+        #expect(!restored.alwaysOnTop)
     }
 
     @Test func `invalid preferences cannot restore an unusable window`() throws {
