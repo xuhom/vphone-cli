@@ -94,6 +94,8 @@ class VPhoneMenuController {
 
     var touchIDMenuItem: NSMenuItem?
     var trackpadGesturesItem: NSMenuItem?
+    var mouseCaptureItem: NSMenuItem?
+    lazy var externalDisplayWindow = VPhoneExternalDisplayWindowController(control: control)
     var locationProvider: VPhoneLocationProvider?
     var locationMenuItem: NSMenuItem?
     var locationPresetMenuItem: NSMenuItem?
@@ -101,6 +103,14 @@ class VPhoneMenuController {
     var locationReplayStopItem: NSMenuItem?
     var screenRecorder: VPhoneScreenRecorder?
     var recordingItem: NSMenuItem?
+    /// Always targets this VM's display, even when a tool window is key.
+    weak var displayWindow: NSWindow? {
+        didSet {
+            alwaysOnTopItem?.isEnabled = displayWindow != nil
+            alwaysOnTopItem?.state = displayWindow?.level == .floating ? .on : .off
+        }
+    }
+    private var alwaysOnTopItem: NSMenuItem?
     var cameraServer: VPhoneCameraServer? {
         didSet {
             cameraServer?.onSourceStateChange = { [weak self] in self?.updateCameraSourceState() }
@@ -115,8 +125,15 @@ class VPhoneMenuController {
     var cameraSourceTestPatternItem: NSMenuItem?
     var cameraSourceVideoFileItem: NSMenuItem?
     var cameraSourceBuiltInItem: NSMenuItem?
+    var cameraSourceSystemCameraItem: NSMenuItem?
     var cameraStartStopItem: NSMenuItem?
-    weak var captureView: VPhoneVirtualMachineView?
+    weak var captureView: VPhoneVirtualMachineView? {
+        didSet {
+            captureView?.onMouseCaptureChange = { [weak self] captured in
+                self?.mouseCaptureItem?.state = captured ? .on : .off
+            }
+        }
+    }
     var batterySyncEnabled = false
     var batterySyncStatusItem: NSMenuItem?
     var batteryLevelMenuItems: [NSMenuItem] = []
@@ -197,6 +214,11 @@ class VPhoneMenuController {
             keyEquivalent: "m",
         )
         windowMenu.addItem(NSMenuItem.separator())
+        let alwaysOnTop = makeItem("Always on Top", action: #selector(toggleAlwaysOnTop), symbol: "pin")
+        alwaysOnTop.isEnabled = false
+        alwaysOnTopItem = alwaysOnTop
+        windowMenu.addItem(alwaysOnTop)
+        windowMenu.addItem(NSMenuItem.separator())
         windowMenu.addItem(
             withTitle: "Bring All to Front",
             action: #selector(NSApplication.arrangeInFront(_:)),
@@ -208,6 +230,14 @@ class VPhoneMenuController {
 
         VPhoneLocalization.menu(mainMenu)
         NSApp.mainMenu = mainMenu
+    }
+
+    @objc private func toggleAlwaysOnTop() {
+        guard let displayWindow else { return }
+        let enabled = displayWindow.level != .floating
+        displayWindow.level = enabled ? .floating : .normal
+        alwaysOnTopItem?.state = enabled ? .on : .off
+        if enabled { displayWindow.orderFront(nil) }
     }
 
     /// "2.3.2 (26, 735927f)": the bundle version, its build number and the

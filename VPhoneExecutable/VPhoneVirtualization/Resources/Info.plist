@@ -9,14 +9,16 @@
 	<key>CFBundlePackageType</key>
 	<string>BNDL</string>
 	<key>CFBundleVersion</key>
-	<string>79</string>
+	<string>80</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.15.3</string>
+	<string>2.15.4</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Streams audio from this virtual iPhone to an authorized device on the local network.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Shares this Mac's built-in camera with the virtual iPhone for both front and back camera capture.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Shares this Mac's microphone with the virtual iPhone so apps running inside it can record.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Shares this Mac's camera with the virtual iPhone while System Camera streaming is enabled.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
 </dict>
 </plist>

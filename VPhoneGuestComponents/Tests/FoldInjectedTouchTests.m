@@ -1,6 +1,9 @@
 #import "../FoldDisplay/FoldDisplayPrivate.h"
 #include <assert.h>
 
+// This test exercises digitizer routing without creating a render server.
+void vpPrepareExternalRenderDisplays(id server) { (void)server; }
+
 @interface InjectedTouchDisplay : NSObject
 @property NSString *uniqueId;
 @property BOOL enabled;

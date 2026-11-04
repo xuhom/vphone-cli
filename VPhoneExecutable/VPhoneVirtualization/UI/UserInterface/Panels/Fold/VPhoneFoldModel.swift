@@ -12,7 +12,7 @@ extension VPhoneDuoPosture {
         switch self {
         case .closed: String(localized: "Closed", bundle: VPhoneLocalization.bundle)
         case .book: String(localized: "Book", bundle: VPhoneLocalization.bundle)
-        case .open: String(localized: "Open", bundle: VPhoneLocalization.bundle)
+        case .open: String(localized: "fold.posture.open", defaultValue: "Open", bundle: VPhoneLocalization.bundle)
         }
     }
 }

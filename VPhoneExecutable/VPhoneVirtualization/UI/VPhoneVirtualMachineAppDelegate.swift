@@ -53,10 +53,6 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
             VPhoneDockName.label(name)
         }
 
-        if !command.noGraphics {
-            VPhoneHostHotKeys.shared.recoverAfterCrash()
-        }
-
         signal(SIGINT, SIG_IGN)
         let src = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         src.setEventHandler { [weak self] in
@@ -285,6 +281,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
                 try VPhoneHostFilePermissions.makeAccessible(at: config)
             }
             mc.captureView = wc.captureView
+            mc.displayWindow = wc.displayWindow
             mc.showsTVControls = options.isTVGuest
             mc.showsWatchControls = options.isWatchGuest
             mc.touchIDMonitor = wc.touchIDMonitor

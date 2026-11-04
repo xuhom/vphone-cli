@@ -26,6 +26,7 @@ final class VPhoneCameraServer {
         case testPattern
         case builtInCamera
         case videoFile // .mov / .mp4 / .m4v via AVAssetReader
+        case systemCamera
     }
 
     nonisolated static let vsockPort: UInt32 = 1338
@@ -35,6 +36,7 @@ final class VPhoneCameraServer {
     nonisolated static let pixelFormat: UInt32 = 0x4247_5241 // 'BGRA' — kCMPixelFormat_32BGRA
 
     private(set) var sourceKind: SourceKind = .off
+    private(set) var cameraDeviceID: String?
     private(set) var isConnected = false
 
     private var device: VZVirtioSocketDevice?
@@ -69,7 +71,7 @@ final class VPhoneCameraServer {
                 onError?("Allow Camera access for VPhone Launchpad in System Settings → Privacy & Security → Camera, then select the source again.")
                 return
             }
-            setSource(.builtInCamera)
+            do { try setSource(.builtInCamera) } catch { onError?(error.localizedDescription) }
         }
     }
 
@@ -95,16 +97,21 @@ final class VPhoneCameraServer {
 
     // MARK: - Source selection
 
-    func setSource(_ kind: SourceKind, videoURL: URL? = nil) {
+    func setSource(_ kind: SourceKind, videoURL: URL? = nil, cameraDeviceID: String? = nil) throws {
         sourceSelectionToken &+= 1
-        if sourceKind == kind, kind != .videoFile {
+        if sourceKind == kind, kind != .videoFile,
+           kind != .systemCamera || self.cameraDeviceID == cameraDeviceID {
             return
         }
-        let wasStreaming = (timer != nil)
+        // Construct first so a failed camera setup preserves the old source.
+        let camera = kind == .systemCamera ? try VPhoneSystemCameraProducer(
+            width: Self.defaultWidth, height: Self.defaultHeight, deviceID: cameraDeviceID) : nil
+        let wasStreaming = streamingRequested
         if wasStreaming {
             stopStreaming()
         }
         sourceKind = kind
+        self.cameraDeviceID = kind == .systemCamera ? cameraDeviceID : nil
         switch kind {
         case .builtInCamera:
             let token = sourceSelectionToken
@@ -121,6 +128,8 @@ final class VPhoneCameraServer {
                 sourceKind = .off
                 onError?(error.localizedDescription)
             }
+        case .systemCamera:
+            producer = camera
         case .off:
             producer = nil
         case .testPattern:

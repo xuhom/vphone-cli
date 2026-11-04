@@ -65,9 +65,9 @@ struct FirmwareCatalogReportTests {
 
     @Test func `lists every curated guest`() {
         let report = VPhoneFirmwareCatalog.report(hostMacOS: 27)
-        // iOS 17 desktop bring-up requires explicit sources and is not an
+        // iOS 16/17 desktop bring-up requires explicit sources and is not an
         // automatic catalog pairing, despite having a known device identity.
-        let curated = VPhoneGuestDevice.known.filter { $0 != .iPhone15_4 }
+        let curated = VPhoneGuestDevice.known.filter { $0 != .iPhone15_4 && $0 != .iPhone15_2 }
         #expect(report.devices.map(\.productType) == curated.map(\.productType))
         #expect(report.devices.first?.pairings == report.pairings)
         for device in report.devices.dropFirst() {
@@ -77,10 +77,11 @@ struct FirmwareCatalogReportTests {
         }
     }
 
-    @Test func `experimental i phone 15 requires explicit firmware sources`() {
-        #expect(VPhoneGuestDevice.known.contains(.iPhone15_4))
-        #expect(VPhoneFirmwareCatalog.pairings(for: "iPhone15,4", hostMacOS: 27).isEmpty)
-        #expect(!VPhoneFirmwareCatalog.report(hostMacOS: 27).devices.contains { $0.productType == "iPhone15,4" })
+    @Test(arguments: [VPhoneGuestDevice.iPhone15_4, .iPhone15_2])
+    func `experimental desktop guests require explicit firmware sources`(guest: VPhoneGuestDevice) {
+        #expect(VPhoneGuestDevice.known.contains(guest))
+        #expect(VPhoneFirmwareCatalog.pairings(for: guest.productType, hostMacOS: 27).isEmpty)
+        #expect(!VPhoneFirmwareCatalog.report(hostMacOS: 27).devices.contains { $0.productType == guest.productType })
     }
 
     @Test func `the Apple TV 4K pairs each OTA with the Apple TV HD IPSW it is restored over`() throws {
@@ -245,7 +246,8 @@ struct FirmwareCatalogReportTests {
     }
 
     @Test func `other i phones have pairings of their own`() {
-        for guest in VPhoneGuestDevice.known where guest.family == .iPhone && guest.presentsBoard && guest != .iPhone17_3 && guest != .iPhone15_4 {
+        // The XS Max's iOS 18 catalogue has its own assertions below.
+        for guest in VPhoneGuestDevice.known where guest.family == .iPhone && guest.presentsBoard && guest != .iPhone17_3 && guest != .iPhone15_4 && guest != .iPhone15_2 && guest != .iPhone11_6 {
             let pairings = VPhoneFirmwareCatalog.pairings(for: guest.productType)
             let firstRelease = switch guest.productType {
             case "iPhone18,5": "iOS 26.3.1"
