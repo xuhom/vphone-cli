@@ -122,6 +122,17 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         syncsHostLocation ?? false
     }
 
+    // MARK: - Developer
+
+    /// Whether vphone-vm holds the guest's CoreDevice tunnel open while it
+    /// runs, so Xcode and Instruments see the guest online. Missing in older
+    /// manifests, which leave the tunnel to whoever asks for it.
+    public let holdsDeveloperTunnel: Bool?
+
+    public var keepsDeveloperTunnelOpen: Bool {
+        holdsDeveloperTunnel ?? false
+    }
+
     // MARK: - Display
 
     /// Screen configuration
@@ -394,6 +405,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         unlocksAtStartup: Bool? = nil,
         syncsHostLocation: Bool? = nil,
         duoDisplayMode: DuoDisplayMode? = nil,
+        holdsDeveloperTunnel: Bool? = nil,
     ) {
         schemaVersion = Self.currentSchemaVersion
         self.platformType = platformType
@@ -412,6 +424,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         self.unlocksAtStartup = unlocksAtStartup
         self.syncsHostLocation = syncsHostLocation
         self.duoDisplayMode = duoDisplayMode
+        self.holdsDeveloperTunnel = holdsDeveloperTunnel
     }
 
     // MARK: - Creation
@@ -582,6 +595,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
         unlocksAtStartup: Bool? = nil,
         syncsHostLocation: Bool? = nil,
         duoDisplayMode: DuoDisplayMode? = nil,
+        holdsDeveloperTunnel: Bool? = nil,
     ) -> VPhoneVirtualMachineManifest {
         VPhoneVirtualMachineManifest(
             platformType: platformType,
@@ -600,6 +614,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             unlocksAtStartup: unlocksAtStartup ?? self.unlocksAtStartup,
             syncsHostLocation: syncsHostLocation ?? self.syncsHostLocation,
             duoDisplayMode: duoDisplayMode ?? self.duoDisplayMode,
+            holdsDeveloperTunnel: holdsDeveloperTunnel ?? self.holdsDeveloperTunnel,
         )
     }
 
@@ -622,6 +637,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             unlocksAtStartup: unlocksAtStartup,
             syncsHostLocation: syncsHostLocation,
             duoDisplayMode: duoDisplayMode,
+            holdsDeveloperTunnel: holdsDeveloperTunnel,
         )
     }
 
@@ -646,6 +662,7 @@ public struct VPhoneVirtualMachineManifest: Codable, Sendable {
             unlocksAtStartup: unlocksAtStartup,
             syncsHostLocation: syncsHostLocation,
             duoDisplayMode: device.productType == "iPhone19,4" ? duoDisplayMode : nil,
+            holdsDeveloperTunnel: holdsDeveloperTunnel,
         )
     }
 }

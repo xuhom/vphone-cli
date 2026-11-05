@@ -210,6 +210,7 @@ public enum VPhoneBundleOperations {
         unlocksAtStartup: Bool? = nil,
         syncsHostLocation: Bool? = nil,
         duoDisplayMode: VPhoneVirtualMachineManifest.DuoDisplayMode? = nil,
+        holdsDeveloperTunnel: Bool? = nil,
     ) throws -> VPhoneBundle {
         let bundle = try library.bundle(named: name)
         if duoDisplayMode != nil, bundle.manifest.guestDevice.productType != "iPhone19,4" {
@@ -228,6 +229,7 @@ public enum VPhoneBundleOperations {
             unlocksAtStartup: unlocksAtStartup,
             syncsHostLocation: syncsHostLocation,
             duoDisplayMode: duoDisplayMode,
+            holdsDeveloperTunnel: holdsDeveloperTunnel,
         )
         try updated.write(to: bundle.configURL)
         try VPhoneHostFilePermissions.makeAccessible(at: bundle.configURL)
