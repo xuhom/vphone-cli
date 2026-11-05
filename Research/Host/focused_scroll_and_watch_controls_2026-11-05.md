@@ -72,9 +72,14 @@ new request authorized enabling it. After restart the geometry diagnostic
 reports `scroll_input_enabled=true`.
 
 The desktop automation interface refused targeted button input as changed
-app state. It could observe the live window; it did not exercise those
-physical clicks or claim a native wheel event had arrived. The physical
-button/wheel check remains unconfirmed. Final diagnostics showed the gesture
-preference enabled, zero forwarded scroll events and no held scroll touch or
-native scroll. Delivery is recorded as compiled, tested and installed, with
-that hardware-input check still requiring confirmation.
+app state. It could observe the live window, but did not exercise those
+physical clicks. Its diagnostic snapshot was taken before the owner's test
+and showed the gesture preference enabled with no held scroll gesture.
+
+The Mac owner subsequently confirmed that Kiwi's titlebar buttons and actual
+scrolling both work normally on 2.15.9, completing the physical-input check.
+The reply did not distinguish which scrolling device was used, so this is
+manual acceptance of the tested Watch workflow rather than a claim that both
+mouse and trackpad hardware were separately exercised. The owner also
+confirmed completion of the administrator verification. No code or installed
+binary changed for this acceptance record.

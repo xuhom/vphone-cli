@@ -112,7 +112,9 @@ the owner's selected face. Hom-iPhone's environment binding advanced to
 2.15.9 on startup; stopped Duo remains on the identical 2.15.8 environment.
 The other two guests remain stopped, as at the beginning of this task.
 
-The owner was offered a physical scroll/button check. It remains unconfirmed;
-the background desktop interface could inspect the window but refused its
-targeted input. This note does not claim those physical inputs passed. The
-code, regression tests and installed host bundle are ready for xuhom/main.
+The owner subsequently confirmed that Kiwi's titlebar buttons and actual
+scrolling work normally on 2.15.9, completing its physical-input acceptance.
+This supplements the visual inspection and regression tests; the desktop
+automation interface itself had refused targeted input. The owner also
+confirmed completion of the administrator verification. The installed App
+and Bundle remain unchanged.
