@@ -37,6 +37,15 @@ final class VPhoneApplication: NSApplication {
     private static let homeKeyCode: UInt16 = 0x73
 
     override func sendEvent(_ event: NSEvent) {
+        // Route once, before VZ's monitors or a titlebar control can take the
+        // wheel. The display window owns scrolling whenever it has focus,
+        // including over its titlebar, regardless of its first responder.
+        if event.type == .scrollWheel,
+           let container = keyWindow?.contentView as? VPhoneDisplayContainerView,
+           let view = container.displayView as? VPhoneVirtualMachineView,
+           view.handleFocusedScroll(event) {
+            return
+        }
         // The remote's Return/Esc are consumer Select/Menu, including while
         // AppKit would otherwise match the Device menu's bare Escape item.
         if (event.type == .keyDown || event.type == .keyUp),

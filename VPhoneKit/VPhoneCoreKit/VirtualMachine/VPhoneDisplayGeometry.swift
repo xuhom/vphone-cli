@@ -1,5 +1,22 @@
 import CoreGraphics
 
+/// Focus and delta policy shared by the VM event dispatcher and display view.
+public enum VPhoneScrollInput {
+    public static let pointsPerWheelLine: CGFloat = 16
+
+    public static func shouldCapture(
+        appActive: Bool, windowKey: Bool, hasSheet: Bool, eventMatchesWindow: Bool, enabled: Bool,
+    ) -> Bool {
+        appActive && windowKey && !hasSheet && eventMatchesWindow && enabled
+    }
+
+    public static func touchDelta(x: CGFloat, y: CGFloat, precise: Bool, inverted: Bool) -> CGPoint {
+        guard x.isFinite, y.isFinite else { return .zero }
+        let scale: CGFloat = (precise ? 1 : pointsPerWheelLine) * 1.5 * (inverted ? -1 : 1)
+        return CGPoint(x: -x * scale, y: y * scale)
+    }
+}
+
 // MARK: - Display Geometry
 
 /// Where the guest display sits inside the view that shows it.

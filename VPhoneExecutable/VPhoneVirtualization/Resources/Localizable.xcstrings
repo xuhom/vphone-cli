@@ -11995,6 +11995,15 @@
         }
       }
     },
+    "Digital Crown" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Digital Crown" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "Digital Crown" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "Digital Crown" } },
+        "vi" : { "stringUnit" : { "state" : "translated", "value" : "Digital Crown" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "数码表冠" } }
+      }
+    },
     "Directory link creates a cycle at %@." : {
       "localizations" : {
         "en" : {

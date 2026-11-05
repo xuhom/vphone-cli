@@ -18,6 +18,9 @@ final class VPhoneDisplayContainerView: NSView {
     var isPadGuest = false {
         didSet { needsLayout = true }
     }
+    var isWatchGuest = false {
+        didSet { needsLayout = true }
+    }
     var isDuoGuest = false {
         didSet { needsLayout = true }
     }
@@ -27,7 +30,7 @@ final class VPhoneDisplayContainerView: NSView {
     var isDuoCoverDisplay = true {
         didSet { needsLayout = true }
     }
-    var hasRoundedScreen: Bool { isPhoneGuest || isPadGuest }
+    var hasRoundedScreen: Bool { isPhoneGuest || isPadGuest || isWatchGuest }
     private let screenMask = CAShapeLayer()
     /// Approximately 3 mm in AppKit points, independent of the guest's scale.
     var titlebarGap: CGFloat { hasRoundedScreen ? 3 * 72 / 25.4 : 0 }
@@ -364,7 +367,13 @@ final class VPhoneDisplayContainerView: NSView {
         // iPad panels have much tighter physical corners than iPhone panels.
         // Use a proportional approximation so the outline scales with the VM.
         let radius: CGFloat
-        if isDuoInnerDisplay || (isDuoGuest && !isDuoCoverDisplay),
+        if isWatchGuest, panelSize.width > 0, panelSize.height > 0 {
+            // Watch7,18 reports a native 50-point display corner on its
+            // 208 x 248-point panel. Use guest points so resizing and turning
+            // preserve the physical curve instead of inheriting Mac corners.
+            let scale = min(rect.width / panelSize.width, rect.height / panelSize.height)
+            radius = min(50 * scale, min(rect.width, rect.height) / 2)
+        } else if isDuoInnerDisplay || (isDuoGuest && !isDuoCoverDisplay),
            panelSize.width > 0, panelSize.height > 0 {
             // display1's native corner is 55 guest points (165 pixels at 3x).
             // panelSize comes from the final scanout / guest scale: fixed-inner

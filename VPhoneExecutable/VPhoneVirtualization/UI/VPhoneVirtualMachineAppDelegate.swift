@@ -189,6 +189,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
                 screenScale: options.screenScale,
                 isPhoneGuest: !options.isPadGuest && !options.usesTVOS && !options.isWatchGuest,
                 isPadGuest: options.isPadGuest,
+                isWatchGuest: options.isWatchGuest,
                 isDuoGuest: options.isDuoGuest,
                 isDuoInnerDisplay: options.isDuoInnerDisplay,
                 hardwareKeyboardEnabled: vm.usesHardwareKeyboard,
@@ -206,7 +207,7 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
             )
             wc.captureView?.escapeIsBackGesture = !options.isPadGuest && !options.isTVGuest
             wc.captureView?.isTVGuest = options.isTVGuest
-            wc.homeButtonHoldsInGuest = options.isTVGuest
+            wc.homeButtonHoldsInGuest = options.isTVGuest || options.isWatchGuest
             windowController = wc
             if options.isHomePodGuest {
                 homePodDisplayTask = Task { [weak wc, weak control] in

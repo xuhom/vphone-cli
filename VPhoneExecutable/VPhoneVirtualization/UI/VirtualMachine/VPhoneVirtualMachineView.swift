@@ -111,6 +111,7 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     /// A native scroll (`input.scroll`) is under way: `began` has gone out and
     /// `ended` not yet.
     private var nativeScrollActive = false
+    private var scrollEventCount: UInt64 = 0
     /// `ended` waiting to see whether AppKit's momentum follows the lift.
     private var nativeScrollEndWork: DispatchWorkItem?
     /// A click ended the scroll; the rest of its momentum is dropped until the
@@ -135,14 +136,6 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     /// How long a scroll from a wheel without gesture phases stays open after
     /// its last event, as the web console does.
     private static let nativeScrollIdleEnd: TimeInterval = 0.12
-    /// Points per line of a wheel that scrolls in lines (no precise deltas).
-    private static let nativeScrollLine: CGFloat = 16
-
-    /// Guest points travelled per point of trackpad delta. Above 1 because a
-    /// single trackpad swipe produces far less travel than a finger covers on a
-    /// phone screen: at 1:1 an ordinary swipe could not carry a gesture that has
-    /// to travel a third of the screen (unlock, back) to completion.
-    private static let scrollToTouchScale: CGFloat = 1.5
     /// Bottom fraction of the window treated as the Home indicator strip. See
     /// `scrollStartPoint(for:travel:)`.
     private static let homeEdgeSnapFraction: CGFloat = 0.10
@@ -465,12 +458,35 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     /// Replay a trackpad scroll as a guest finger that presses under the pointer
     /// and follows the physical direction of the gesture.
     override func scrollWheel(with event: NSEvent) {
+        _ = handleFocusedScroll(event)
+    }
+
+    /// Called by the application before normal hit testing, and by the view
+    /// for direct delivery. Returning true consumes the event exactly once.
+    @discardableResult
+    func handleFocusedScroll(_ event: NSEvent) -> Bool {
+        guard VPhoneScrollInput.shouldCapture(
+            appActive: NSApp.isActive, windowKey: window?.isKeyWindow == true,
+            hasSheet: window?.attachedSheet != nil,
+            eventMatchesWindow: event.window == nil || event.window === window,
+            enabled: trackpadGesturesEnabled,
+        ) else { return false }
+        scrollEventCount &+= 1
+        processScroll(event)
+        return true
+    }
+
+    /// Losing focus must release synthetic fingers even when AppKit sends
+    /// the final phase of a gesture to the newly focused window instead.
+    func cancelScrollGestures() {
+        finishScrollTouch()
+        endNativeScroll()
+        endPinch()
+    }
+
+    private func processScroll(_ event: NSEvent) {
         if guestPointerFollowsMouse, let control {
             scrollNatively(event, control: control)
-            return
-        }
-        guard trackpadGesturesEnabled, event.hasPreciseScrollingDeltas else {
-            super.scrollWheel(with: event)
             return
         }
         // A pinch in flight owns both fingers; interleaving it with a synthetic
@@ -495,21 +511,24 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
         }
 
         let delta = scrollDelta(of: event)
-        let pointer = convert(event.locationInWindow, from: nil)
+        let local = convert(event.locationInWindow, from: nil)
+        // A wheel over titlebar chrome belongs to the focused guest too.
+        let pointer = displayGeometry.displayRect.contains(local)
+            ? local : NSPoint(x: bounds.midX, y: bounds.midY)
 
         switch event.phase {
         case .began, .mayBegin:
             // A new gesture supersedes whatever was still in flight.
             finishScrollTouch()
-            followScrollDelta(delta, pointer: pointer)
+            followScrollDelta(delta, pointer: pointer, allowSystemGestures: event.hasPreciseScrollingDeltas)
         case .ended, .cancelled:
-            followScrollDelta(delta, pointer: pointer)
+            followScrollDelta(delta, pointer: pointer, allowSystemGestures: event.hasPreciseScrollingDeltas)
             finishScrollTouch()
         default:
             // Devices without gesture phases (e.g. Magic Mouse) report plain
             // deltas and never end the gesture, so press, drag and release each
             // event instead of leaving a finger down between them.
-            followScrollDelta(delta, pointer: pointer)
+            followScrollDelta(delta, pointer: pointer, allowSystemGestures: event.hasPreciseScrollingDeltas)
             if event.phase.isEmpty {
                 finishScrollTouch()
             }
@@ -589,7 +608,7 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     /// needs no turning; one window point is as many guest points as the drawn
     /// display is smaller than the guest's.
     private func nativeScrollDelta(of event: NSEvent) -> CGVector {
-        let unit = event.hasPreciseScrollingDeltas ? 1 : Self.nativeScrollLine
+        let unit = event.hasPreciseScrollingDeltas ? 1 : VPhoneScrollInput.pointsPerWheelLine
         let geometry = displayGeometry
         let pixels = recordingGraphicsDisplay?.sizeInPixels ?? .zero
         var scale: CGFloat = 1
@@ -634,7 +653,7 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
 
     /// Apply one trackpad delta to the synthetic finger, pressing it down first
     /// once the gesture has clearly become a drag.
-    private func followScrollDelta(_ delta: CGPoint, pointer: NSPoint) {
+    private func followScrollDelta(_ delta: CGPoint, pointer: NSPoint, allowSystemGestures: Bool) {
         guard delta != .zero else { return }
         // A re-anchor is mid-flight: the finger is deliberately up for the gap.
         // Bank the travel instead of dropping it, otherwise a fast swipe would
@@ -653,7 +672,8 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
             }
             let carry = scrollPending
             scrollPending = .zero
-            let start = scrollStartPoint(for: pointer, travel: carry)
+            let start = allowSystemGestures
+                ? scrollStartPoint(for: pointer, travel: carry) : (point: pointer, swipeAim: 0)
             beginScrollTouch(at: start.point, swipeAim: start.swipeAim)
             if scrollTouchPoint != nil {
                 moveScrollTouch(by: carry)
@@ -677,15 +697,10 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
     /// swipe on a landscape guest dragged the finger across it, into the
     /// panel's edge, where the re-anchor pressed it down again as a tap.
     private func scrollDelta(of event: NSEvent) -> CGPoint {
-        var dx = -event.scrollingDeltaX
-        var dy = event.scrollingDeltaY
-        if event.isDirectionInvertedFromDevice {
-            dx = -dx
-            dy = -dy
-        }
-        return screenOrientation.panelVector(
-            fromScreen: CGPoint(x: dx * Self.scrollToTouchScale, y: dy * Self.scrollToTouchScale),
-        )
+        screenOrientation.panelVector(fromScreen: VPhoneScrollInput.touchDelta(
+            x: event.scrollingDeltaX, y: event.scrollingDeltaY,
+            precise: event.hasPreciseScrollingDeltas, inverted: event.isDirectionInvertedFromDevice,
+        ))
     }
 
     /// How the window shows the panel: this view is turned with the guest's
@@ -1018,6 +1033,8 @@ class VPhoneVirtualMachineView: VZVirtualMachineView {
             "app_active": NSApp.isActive, "window_key": window?.isKeyWindow == true,
             "system_keys_captured": capturesSystemKeys, "mouse_captured": isMouseCaptured,
             "host_hotkeys_suspended": VPhoneHostHotKeys.shared.isSuspended,
+            "scroll_input_enabled": trackpadGesturesEnabled, "scroll_input_events": scrollEventCount,
+            "scroll_touch_active": scrollTouchPoint != nil, "native_scroll_active": nativeScrollActive,
         ]
     }
 

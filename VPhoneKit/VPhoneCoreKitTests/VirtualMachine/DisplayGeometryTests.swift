@@ -6,6 +6,26 @@ import Testing
 /// Issue #525: in full screen the display is letterboxed, and touches were
 /// normalized against the whole view, so the bars mapped onto the screen.
 struct DisplayGeometryTests {
+    @Test func `scroll capture belongs only to the focused VM without a sheet`() {
+        #expect(VPhoneScrollInput.shouldCapture(appActive: true, windowKey: true, hasSheet: false,
+                                               eventMatchesWindow: true, enabled: true))
+        for blocked in ["inactive", "background", "sheet", "other-window", "disabled"] {
+            #expect(!VPhoneScrollInput.shouldCapture(
+                appActive: blocked != "inactive", windowKey: blocked != "background", hasSheet: blocked == "sheet",
+                eventMatchesWindow: blocked != "other-window", enabled: blocked != "disabled",
+            ))
+        }
+    }
+
+    @Test func `mouse wheel notches and precise trackpad travel share the touch path`() {
+        let wheel = VPhoneScrollInput.touchDelta(x: 1, y: -2, precise: false, inverted: false)
+        let trackpad = VPhoneScrollInput.touchDelta(x: 16, y: -32, precise: true, inverted: false)
+        #expect(wheel == trackpad)
+        #expect(wheel == CGPoint(x: -24, y: -48))
+        #expect(VPhoneScrollInput.touchDelta(x: -1, y: 2, precise: false, inverted: true) == wheel)
+        #expect(VPhoneScrollInput.touchDelta(x: .infinity, y: 1, precise: true, inverted: false) == .zero)
+    }
+
     @Test(arguments: VPhoneDuoPosture.allCases, [0.5, 1.0, 2.0])
     @MainActor func `Duo panel stretching preserves full scanout touches`(posture: VPhoneDuoPosture, scale: Double) {
         let size = CGSize(width: posture.panelSize.width * scale, height: posture.panelSize.height * scale)

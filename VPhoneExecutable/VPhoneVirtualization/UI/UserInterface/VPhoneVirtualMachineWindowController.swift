@@ -11,14 +11,14 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     private weak var virtualMachineView: VPhoneVirtualMachineView?
     private(set) var homePodDisplayView: VPhoneHomePodDisplayView?
     private var homePodGuest = false
+    private var watchGuest = false
     private var usesTVOS = false
     private(set) var touchIDMonitor: VPhoneTouchIDMonitor?
     private var homeButton: NSButton?
     private var deviceButtons: [NSButton] = []
     private var deviceMenuItems: [NSMenuItem] = []
     private var foldButton: NSButton?
-    /// An Apple TV's TV button: holding the titlebar button holds it in the
-    /// guest, so a click goes Home and a hold opens Control Center.
+    /// The Apple TV button and Watch crown also forward a held press.
     var homeButtonHoldsInGuest = false {
         didSet { applyHomeButtonHold() }
     }
@@ -54,6 +54,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         screenScale: Double,
         isPhoneGuest: Bool,
         isPadGuest: Bool,
+        isWatchGuest: Bool,
         isDuoGuest: Bool,
         isDuoInnerDisplay: Bool,
         hardwareKeyboardEnabled: Bool,
@@ -67,6 +68,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     ) {
         self.control = control
         self.homePodGuest = homePodGuest
+        watchGuest = isWatchGuest
         self.usesTVOS = usesTVOS
         self.foldableGuest = foldableGuest
         windowStateReady = false
@@ -128,6 +130,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             let display = VPhoneDisplayContainerView(displayView: view)
             display.isPhoneGuest = isPhoneGuest
             display.isPadGuest = isPadGuest
+            display.isWatchGuest = isWatchGuest
             display.isDuoGuest = isDuoGuest
             display.isDuoInnerDisplay = isDuoInnerDisplay
             display.isDuoCoverDisplay = !isDuoInnerDisplay && (!foldableGuest || control.duoStartupPosture == .closed)
@@ -444,6 +447,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         touchIDMonitor = nil
         captureView?.capturesSystemKeys = false
         captureView?.setMouseCaptured(false)
+        captureView?.cancelScrollGestures()
         captureView?.virtualMachine = nil
         captureView?.keySender = nil
         captureView?.control = nil
@@ -630,6 +634,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
                 MainActor.assumeIsolated {
                     self?.captureView?.capturesSystemKeys = false
                     self?.captureView?.setMouseCaptured(false)
+                    self?.captureView?.cancelScrollGestures()
                     (NSApp as? VPhoneApplication)?.resetGuestKeyState()
                     VPhoneHostHotKeys.shared.resume()
                 }
@@ -639,6 +644,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
             MainActor.assumeIsolated {
                 self?.captureView?.capturesSystemKeys = false
                 self?.captureView?.setMouseCaptured(false)
+                self?.captureView?.cancelScrollGestures()
                 (NSApp as? VPhoneApplication)?.resetGuestKeyState()
                 VPhoneHostHotKeys.shared.resume()
             }
@@ -670,7 +676,10 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         } else {
             VPhoneHostHotKeys.shared.resume()
         }
-        if !focused { captureView?.setMouseCaptured(false) }
+        if !focused {
+            captureView?.setMouseCaptured(false)
+            captureView?.cancelScrollGestures()
+        }
     }
 
     // MARK: - Title
@@ -867,6 +876,11 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         accessibilityDescription: VPhoneLocalization.text("Home"),
     ) ?? NSImage()
 
+    private static let crownImage = NSImage(
+        systemSymbolName: "digitalcrown.horizontal.press",
+        accessibilityDescription: VPhoneLocalization.text("Digital Crown"),
+    ) ?? homeImage
+
     /// The panel the guest shows in this posture: the cover alone when
     /// closed, the inner panel otherwise.
     private static func foldImage(for position: VPhoneFoldPosition?) -> NSImage {
@@ -920,11 +934,12 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     }()
 
     private func makeHomeAccessory() -> NSTitlebarAccessoryViewController {
-        let button = VPhoneHomeButton(image: Self.homeImage, target: self, action: #selector(homePressed))
-        button.toolTip = VPhoneLocalization.text("Home Button")
+        let button = VPhoneHomeButton(image: watchGuest ? Self.crownImage : Self.homeImage, target: self, action: #selector(homePressed))
+        button.toolTip = VPhoneLocalization.text(watchGuest ? "Digital Crown" : "Home Button")
+        if watchGuest { button.setAccessibilityLabel(VPhoneLocalization.text("Digital Crown")) }
         homeButton = button
         applyHomeButtonHold()
-        deviceButtons = (0..<5).map { _ in NSButton(image: NSImage(), target: nil, action: nil) }
+        deviceButtons = (0..<(watchGuest ? 1 : 5)).map { _ in NSButton(image: NSImage(), target: nil, action: nil) }
         var buttons = deviceButtons + [button]
         if foldableGuest {
             let fold = NSButton(image: Self.titlebarImage(Self.foldImage(for: nil)) ?? NSImage(), target: self, action: #selector(foldPressed))
@@ -985,13 +1000,13 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     }
 
     func connectDeviceButtons(to menu: VPhoneMenuController) {
-        deviceMenuItems = menu.titlebarDeviceItems
+        deviceMenuItems = watchGuest ? [menu.watchSideButtonItem].compactMap { $0 } : menu.titlebarDeviceItems
         for (index, pair) in zip(deviceButtons, deviceMenuItems).enumerated() {
             let (button, item) = pair
             button.image = Self.titlebarImage(item.image)
             button.target = item.target
             button.action = item.action
-            let label = index == 3 ? VPhoneLocalization.text("Lock") : item.title
+            let label = !watchGuest && index == 3 ? VPhoneLocalization.text("Lock") : item.title
             button.toolTip = label
             button.setAccessibilityLabel(label)
         }
@@ -1007,7 +1022,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
         }
         guard let homeButton else { return }
         homeButton.isEnabled = connected
-        homeButton.image = Self.titlebarImage(connected ? Self.homeImage : Self.homeSlashImage)
+        homeButton.image = Self.titlebarImage(watchGuest ? Self.crownImage : connected ? Self.homeImage : Self.homeSlashImage)
         updateFoldButton(position: control?.foldPosition, connected: connected)
     }
 
@@ -1024,7 +1039,7 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 
     @objc private func homePressed() {
         // A held button already sent its press and release.
-        guard !homeButtonHoldsInGuest else { return }
+        guard (homeButton as? VPhoneHomeButton)?.isHoldingGuestButton != true else { return }
         control?.sendHIDPress(page: 0x0C, usage: 0x40)
     }
 
@@ -1093,14 +1108,19 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
 /// returns only when the mouse is released, inside the button or not.
 private final class VPhoneHomeButton: NSButton {
     var onHold: ((Bool) -> Void)?
+    private(set) var isHoldingGuestButton = false
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled, let onHold else {
             super.mouseDown(with: event)
             return
         }
+        isHoldingGuestButton = true
         onHold(true)
+        defer {
+            onHold(false)
+            isHoldingGuestButton = false
+        }
         super.mouseDown(with: event)
-        onHold(false)
     }
 }
