@@ -200,7 +200,8 @@ enum DeviceMethod: String, GuestMethod {
                                                  .optional("matches", .boolean),
                                                  .optional("update_available", .boolean)])
         case .displayBrightness: MethodSpec(.optional("value", .number), result: [.required("auto", .any), .required("value", .number)])
-        case .displayRotation: MethodSpec(.optional("orientation", .string), result: [.optional("accelerometer", .any),
+        case .displayRotation: MethodSpec(.optional("orientation", .string),
+                                         .optional("use_display_tool", .boolean), result: [.optional("accelerometer", .any),
                                                    .required("degrees", .integer),
                                                    .required("device_orientation", .integer),
                                                    .required("locked", .boolean),
@@ -208,6 +209,9 @@ enum DeviceMethod: String, GuestMethod {
                                                    .optional("requested", .any)])
         case .displayOrientation: MethodSpec(result: [.required("degrees", .any),
                                                       .optional("fold_angle", .number),
+                                                      .optional("fold_current_angle", .number),
+                                                      .optional("fold_panel", .string),
+                                                      .optional("fold_sweeping", .boolean),
                                                       .optional("screen_off", .boolean),
                                                       .required("source", .string)])
         case .displayPosture:
@@ -217,10 +221,12 @@ enum DeviceMethod: String, GuestMethod {
                        .optional("hinge", .any),
                        .optional("orientation", .any),
                        .optional("tabletop", .integer),
-                       .optional("angle", .number), result: [.required("angle", .number),
+                       .optional("angle", .number),
+                       .optional("use_display_tool", .boolean), result: [.required("angle", .number),
                                 .required("hinge", .integer),
                                 .required("hinge_hid", .any),
                                 .required("orientation", .integer),
+                                .required("panel_verified", .boolean),
                                 .required("source", .string),
                                 .optional("sweep", .object),
                                 .required("tabletop", .any)])
@@ -471,13 +477,13 @@ extension GuestAPI {
         if let inner = panel["inner"] as? Bool {
             reply["fold_panel"] = inner ? "inner" : "cover"
         }
-        if hinge["enabled"] as? Bool == true, let angle = hinge["angle"] as? NSNumber {
+        if hinge["enabled"] as? Bool == true, let angle = hinge["angle"] as? Double {
             reply["fold_angle"] = angle
             // The configuration angle is the target, not proof the provider
             // finished moving. Hosts must not release fold controls early.
             if let provider = hinge["provider"] as? [String: Any] {
-                reply["fold_sweeping"] = provider["sweeping"]
-                reply["fold_current_angle"] = provider["current_angle"]
+                reply["fold_sweeping"] = provider["sweeping"] as? Bool
+                reply["fold_current_angle"] = provider["current_angle"] as? Double
             }
             // The window covers the panel while it is off: coming on, it
             // shows its last frame from before until the guest draws again.

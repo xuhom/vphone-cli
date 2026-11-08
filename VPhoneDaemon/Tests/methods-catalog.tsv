@@ -58,10 +58,10 @@ display.external.diagnostics	never	-	-	available:boolean?,error:any?,externalPol
 display.external.frame	never	-	-	data:string,mime_type:string	excluded:needs an external display on the guest
 display.external.status	never	-	-	enabled:any,error:any?,height:integer?,name:string?,nonce:string?,ok:boolean?,width:integer?	read
 display.modes	never	-	-	available:boolean,displays:array?,reason:any?	read
-display.orientation	never	-	-	degrees:any,fold_angle:number?,screen_off:boolean?,source:string	read
+display.orientation	never	-	-	degrees:any,fold_angle:number?,fold_current_angle:number?,fold_panel:string?,fold_sweeping:boolean?,screen_off:boolean?,source:string	read
 display.pose	never	-	-	available:boolean,device_orientation:any?,hinge:any?,orientation:any?,reason:string?,tabletop:any?	read
-display.posture	never	position:any,duration:number,profile:string,hinge:any,orientation:any,tabletop:integer,angle:number	-	angle:number,hinge:integer,hinge_hid:any,orientation:integer,source:string,sweep:object?,tabletop:any	mutating
-display.rotation	never	orientation:string	-	accelerometer:any?,degrees:integer,device_orientation:integer,locked:boolean,name:string,requested:any?	read
+display.posture	never	position:any,duration:number,profile:string,hinge:any,orientation:any,tabletop:integer,angle:number,use_display_tool:boolean	-	angle:number,hinge:integer,hinge_hid:any,orientation:integer,panel_verified:boolean,source:string,sweep:object?,tabletop:any	mutating
+display.rotation	never	orientation:string,use_display_tool:boolean	-	accelerometer:any?,degrees:integer,device_orientation:integer,locked:boolean,name:string,requested:any?	read
 display.rotation_lock	never	locked:boolean!	-	degrees:integer,device_orientation:integer,locked:boolean,name:string	mutating
 environment.install	never	libraries:array!	-	installed:array,reboot_required:boolean,restarted_pids:array,root_read_only:boolean	mutating
 environment.status	never	-	-	libraries:any,root_read_only:boolean,staging:string	read
