@@ -53,10 +53,12 @@ diagnostics.self_test	never	-	-	complete:boolean,environment:object,failed:integ
 display.auto_lock	never	-	-	auto_lock_seconds:any,lock_screen_minimum_seconds:any,never:any	read
 display.auto_lock.set	never	seconds:integer!	-	auto_lock_seconds:any,lock_screen_minimum_seconds:any,never:any,requested_auto_lock_seconds:integer	mutating
 display.brightness	never	value:number	-	auto:any,value:number	read
+display.capture_active	never	-	-	attribution_limit:string?,available:boolean,base64:string?,capture_content_verified:boolean?,color_profile_verified:boolean?,color_space:string?,format:string?,height:integer?,identity_binding:string?,orientation_mapping_verified:boolean?,pixel_format:string?,png_bitmap:string?,reason:string?,renderer:string?,renderer_status:string?,resized:boolean?,rotation_applied:integer?,row_bytes:integer?,source:object?*,source_after:object?*,state:string?,surface_bytes:integer?,width:integer?	excluded:needs a display with a verified native capture identity
 display.external.configure	never	enabled:boolean!,width:integer,height:integer	-	enabled:any?,error:any?,height:integer?,name:string?,nonce:string?,ok:boolean?,width:integer?	mutating
 display.external.diagnostics	never	-	-	available:boolean?,error:any?,externalPolicyClasses:object?,monitor:any?,owners:object?,sceneManager:any?,scenes:array?,transformer:any?,updated:any?	read
 display.external.frame	never	-	-	data:string,mime_type:string	excluded:needs an external display on the guest
 display.external.status	never	-	-	enabled:any,error:any?,height:integer?,name:string?,nonce:string?,ok:boolean?,width:integer?	read
+display.layout	never	-	-	available:boolean,cadisplays:array*,capability_failures:object*,geometry_available:boolean,monitors:array*,observation:object*,reason:string,thread:object*	read
 display.modes	never	-	-	available:boolean,displays:array?,reason:any?	read
 display.orientation	never	-	-	degrees:any,fold_angle:number?,fold_current_angle:number?,fold_panel:string?,fold_sweeping:boolean?,screen_off:boolean?,source:string	read
 display.pose	never	-	-	available:boolean,device_orientation:any?,hinge:any?,orientation:any?,reason:string?,tabletop:any?	read
@@ -147,7 +149,7 @@ power.low_power_mode	never	enabled:boolean	-	changed:boolean?,enabled:boolean,me
 process.spawn	never	executable:string!,arguments:array,timeout_seconds:number	-	arguments:array,executable:any,exit_code:any,pid:integer,signal:any,stderr:string,stdout:string,timed_out:boolean	mutating
 processes.kill	always	pid:integer!,signal:string	-	pid:integer,signal:string	mutating
 processes.list	never	filter:string	-	count:integer,processes:array	read
-screen.screenshot	never	-	-	bytes:integer,coordinate_scale:number,data:string?,height:any,mime_type:string,path:string~,width:any	read
+screen.screenshot	never	max_dimension:integer,quality:number,region:object	-	bytes:integer,coordinate_scale:number,data:string,height:integer,mime_type:string,point_height:number,point_width:number,region:object,width:integer	read
 screen.unlock	never	passcode:string,timeout:number	-	locked:any,screen_off:any,was_locked:boolean,was_screen_off:boolean	mutating
 script.eval	never	source:string!,timeout:number	-	crashed:boolean,error:string?,ok:boolean?,output:string?,result:string?	mutating
 script.info	never	-	-	available:boolean,engine:string,globals:array,programs:object	read
