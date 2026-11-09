@@ -23,6 +23,8 @@ destination=${1:?usage: stage-package-notices.zsh destination resolved source-pa
 shift
 (( $# > 0 && $# % 2 == 0 )) || { print -u2 'Expected resolved/source-packages pairs'; exit 1; }
 [[ ${destination:A} != / ]] || { print -u2 'The notice destination cannot be the filesystem root'; exit 1; }
+# A root-owned install must still let the launching user read the sealed notices.
+umask 022
 /bin/rm -rf "$destination"
 /bin/mkdir -p "$destination"
 manifest="$destination/manifest.tsv"
@@ -101,4 +103,5 @@ while (( $# )); do
     done
 done
 LC_ALL=C /usr/bin/sort -u "$manifest" -o "$manifest"
+/bin/chmod 0644 "$manifest"
 "$0" --check "$destination"

@@ -12,7 +12,10 @@ printf '{"pins":[{"identity":"fixture","state":{"revision":"%s"}}]}' "$revision"
 print -r -- 'nested dependency attribution' > "$packages/artifacts/fixture/Fake.xcframework/Licenses/dependency.txt"
 print -r -- 'binary payload must stay outside the notice set' > "$packages/artifacts/fixture/Fake.xcframework/payload.bin"
 collector="$root/scripts/stage-package-notices.zsh"
-"$collector" "$temporary/notices" "$temporary/pins.json" "$packages"
+(umask 077; "$collector" "$temporary/notices" "$temporary/pins.json" "$packages")
+[[ $(/usr/bin/stat -f '%Lp' "$temporary/notices/manifest.tsv") == 644 ]]
+[[ $(/usr/bin/stat -f '%Lp' "$temporary/notices/fixture/$revision/checkout/LICENSE") == 644 ]]
+[[ $(/usr/bin/stat -f '%Lp' "$temporary/notices/fixture/$revision/checkout") == 755 ]]
 /usr/bin/git -C "$root" show "$revision:LICENSE" |
     /usr/bin/cmp - "$temporary/notices/fixture/$revision/checkout/LICENSE"
 /usr/bin/cmp "$packages/artifacts/fixture/Fake.xcframework/Licenses/dependency.txt" \
