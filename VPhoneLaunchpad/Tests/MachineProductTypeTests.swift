@@ -69,6 +69,11 @@ struct MachineProductTypeTests {
         expect(homeViewDevice.isHomeView && homeViewDevice.requiresStandaloneRestore, "HomeView standalone restore")
         expect(homeViewDevice.osName == "HomeView Software", "HomeView OS label")
 
+        machine.guestProductType = "RealityDevice14,1"
+        expect(machine.osName == "visionOS", "Vision Pro machine OS label")
+        let vision = VPhoneLaunchpadFirmwareCatalog.Device(productType: "RealityDevice14,1", name: "Apple Vision Pro (research)", family: "vision", pairings: [])
+        expect(vision.isVision && vision.osName == "visionOS" && vision.requiresStandaloneRestore, "Vision Pro catalog and standalone restore")
+
         // An OTA pairing's build comes from the bundle; an IPSW's from its name.
 
         let catalog = #"""

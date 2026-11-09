@@ -1512,6 +1512,40 @@
         }
       }
     },
+    "The visionOS research preset boots headless by default. The experimental desktop requires additional setup." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The visionOS research preset boots headless by default. The experimental desktop requires additional setup."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "visionOS の研究用プリセットは既定で画面なしで起動します。試験的なデスクトップには追加設定が必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "visionOS 연구용 프리셋은 기본적으로 화면 없이 부팅합니다. 실험적 데스크톱을 사용하려면 추가 설정이 필요합니다."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cấu hình nghiên cứu visionOS mặc định khởi động không có giao diện. Màn hình nền thử nghiệm cần thiết lập thêm."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "visionOS 研究预设默认无界面启动。实验性桌面需要额外配置。"
+          }
+        }
+      }
+    },
     "^[%lld app](inflect: true) removed" : {
       "localizations" : {
         "en" : {

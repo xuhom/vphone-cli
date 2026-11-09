@@ -5,7 +5,7 @@ import Testing
 struct FirmwareCatalogReportTests {
     /// Experimental bring-ups created from IPSW URLs given by hand; the catalog
     /// offers no pairing for them, so the report leaves them out.
-    private static let offCatalog: [VPhoneGuestDevice] = [.iPhone15_4, .iPhone15_2, .realityDevice14_1]
+    private static let offCatalog: [VPhoneGuestDevice] = [.iPhone15_4, .iPhone15_2]
 
     @Test(arguments: ["HomeAccessory17,1", "HomeAccessory17,2"])
     func `HomeView 27_2 uses its full Pallas OTA and the HD restore base`(type: String) throws {
@@ -77,6 +77,16 @@ struct FirmwareCatalogReportTests {
             #expect(!device.pairings.isEmpty)
             #expect(device.name == VPhoneGuestDevice.named(device.productType)?.productName)
         }
+    }
+
+    @Test func `Vision Pro offers only the visionOS 26_4 research pairing`() throws {
+        let vision = try #require(VPhoneFirmwareCatalog.report(hostMacOS: 27).devices.first { $0.family == "vision" })
+        let pairing = try #require(vision.pairings.first)
+        #expect(vision.productType == "RealityDevice14,1" && vision.pairings.count == 1)
+        #expect(pairing.ios.name == "visionOS 26.4")
+        #expect(pairing.ios.url.hasSuffix("Apple_Vision_Pro_26.4_23O247_Restore.ipsw"))
+        #expect(pairing.recommendedCloudOS.url == VPhoneFirmwareCatalog.cloud264)
+        #expect(pairing.matchingCloudOS == nil && vision.kernelcacheLayout == nil)
     }
 
     @Test(arguments: [VPhoneGuestDevice.iPhone15_4, .iPhone15_2])

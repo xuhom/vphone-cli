@@ -538,6 +538,13 @@ public enum VPhoneFirmwareCatalog {
         ]),
     ]
 
+    /// The M2 Vision Pro userland covered by the experimental visionOS preset.
+    static let visionReleases: [(devices: [String], releases: [(version: String, url: String)])] = [
+        (devices: [VPhoneGuestDevice.realityDevice14_1.productType], releases: [
+            ("26.4", "https://updates.cdn-apple.com/2026SpringFCS/fullrestores/122-03386/4A36E19A-B0EC-408E-98E2-172B4DBD0F46/Apple_Vision_Pro_26.4_23O247_Restore.ipsw"),
+        ]),
+    ]
+
     /// iPhone XS Max releases, each paired with its own release's research board
     /// cloudOS: the 18.x kernelcache recipes rebuild that iOS 18 kernel with the
     /// cloudOS 26.1 vphone600 kexts. Kernel-first, so macOS 26.4 and later link
@@ -698,7 +705,7 @@ public enum VPhoneFirmwareCatalog {
         guard guest.productType != VPhoneGuestDevice.iPhone17_3.productType else { return pairings }
         let restored = guest.restoreBase ?? guest
         let otas = otaReleases.filter { $0.productType == guest.productType && $0.unpacks(onMacOS: hostMacOS) }
-        var releases = (iPhoneReleases + iPadReleases + tvReleases + homePodReleases + watchReleases).first { $0.devices.contains(restored.productType) }?.releases ?? []
+        var releases = (iPhoneReleases + iPadReleases + tvReleases + homePodReleases + watchReleases + visionReleases).first { $0.devices.contains(restored.productType) }?.releases ?? []
         if restored != guest {
             releases = otas.compactMap { ota in
                 guard let base = releases.first(where: { $0.version == ota.baseVersion }) else { return nil }
@@ -739,6 +746,7 @@ public enum VPhoneFirmwareCatalog {
         case .appleTV, .homeView: VPhoneCloudOSOption(name: "cloudOS 26.4", url: cloud264)
         case .homePod: researchBoardCloudOS(forVersion: version) ?? VPhoneCloudOSOption(name: "cloudOS 26.4", url: cloud264)
         case .watch: researchBoardCloudOS(forVersion: version) ?? recommendedCloudOS(forVersion: version)
+        case .vision where version == "26.4": VPhoneCloudOSOption(name: "cloudOS 26.4 beta (23E5207q)", url: cloud264)
         case .iPhone, .iPad, .vision: recommendedCloudOS(forVersion: version)
         }
     }

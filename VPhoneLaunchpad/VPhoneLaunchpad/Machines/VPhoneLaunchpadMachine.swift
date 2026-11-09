@@ -172,7 +172,8 @@ nonisolated struct VPhoneLaunchpadMachine: Decodable, Hashable, Identifiable, Se
 
     /// The guest OS name, including accessory and watch guests.
     var osName: String {
-        isHomeView ? "HomeView Software" : isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
+        if guestProductType?.hasPrefix("RealityDevice") == true { return "visionOS" }
+        return isHomeView ? "HomeView Software" : isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
     }
 
     /// config.plist's `guestProductType`, else the product type in the name
@@ -320,14 +321,26 @@ nonisolated struct VPhoneLaunchpadFirmwareCatalog: Decodable, Sendable {
             family == "homePod"
         }
 
-        /// HomePod, HomeView and Apple TV do not use iOS templates or slimming.
+        var isVision: Bool {
+            family == "vision"
+        }
+
+        /// A guest that does not use iOS templates or slimming.
         var requiresStandaloneRestore: Bool {
-            isAppleTV || isHomePod || isHomeView
+            VPhoneLaunchpadFirmwareCatalog.requiresStandaloneRestore(forDevice: productType)
         }
 
         /// The system its IPSWs install.
         var osName: String {
-            isHomeView ? "HomeView Software" : isHomePod ? "HomePod Software" : isWatch ? "watchOS" : isAppleTV ? "tvOS" : isPad ? "iPadOS" : "iOS"
+            switch family {
+            case "homeView": "HomeView Software"
+            case "homePod": "HomePod Software"
+            case "watch": "watchOS"
+            case "appleTV": "tvOS"
+            case "iPad": "iPadOS"
+            case "vision": "visionOS"
+            default: "iOS"
+            }
         }
 
         /// The name with its product type, `iPhone 16 (iPhone17,3)`: Launchpad
@@ -351,5 +364,11 @@ nonisolated struct VPhoneLaunchpadFirmwareCatalog: Decodable, Sendable {
     /// The guest devices, or the iPhone alone from a bundle without `devices`.
     var guests: [Device] {
         devices ?? [Device(productType: device, name: device, family: "iPhone", pairings: pairings)]
+    }
+
+    /// Also used when firmware sources are given without a catalog entry.
+    static func requiresStandaloneRestore(forDevice productType: String?) -> Bool {
+        guard let productType else { return false }
+        return ["AppleTV", "AudioAccessory", "HomeAccessory", "RealityDevice"].contains { productType.hasPrefix($0) }
     }
 }

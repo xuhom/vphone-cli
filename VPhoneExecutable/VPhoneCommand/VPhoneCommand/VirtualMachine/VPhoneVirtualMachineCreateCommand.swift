@@ -119,6 +119,10 @@ struct VPhoneVirtualMachineCreateCommand: ParsableCommand {
         selectedGuest?.usesTVOS == true
     }
 
+    private var requiresStandaloneRestore: Bool {
+        usesTVOS || selectedGuest?.family == .vision
+    }
+
     /// A preset that customises the system before the restore (`minimal`): the
     /// offline trim and the setup boot of a template write the System volume,
     /// which would break that system's seal.
@@ -189,13 +193,13 @@ struct VPhoneVirtualMachineCreateCommand: ParsableCommand {
            VPhoneGuestDevice.named(device)?.family != .homePod {
             throw ValidationError("--ota-source and --ota-key require an OTA userland device, such as --device AppleTV14,1 or AudioAccessory5,1.")
         }
-        if usesTVOS {
+        if requiresStandaloneRestore {
             // Templates and their setup boot drive iOS Setup Assistant and its apps.
             if template != nil {
-                throw ValidationError("A tvOS or HomePod guest is built without a template; --template cannot be used.")
+                throw ValidationError("This guest is built without a template. Remove --template.")
             }
             if try !slimming.request.isEmpty {
-                throw ValidationError("A tvOS or HomePod guest is built without a template; the slimming switches do not apply.")
+                throw ValidationError("This guest is built without a template. The slimming switches do not apply.")
             }
         }
         if customisesRestoredSystem {
@@ -247,7 +251,7 @@ struct VPhoneVirtualMachineCreateCommand: ParsableCommand {
         let (patchPreset, networkMode, unlocks) = try checkOptions()
         let templateUse: VPhoneVirtualMachineCreator.TemplateUse = if let template {
             .identifier(template)
-        } else if noTemplate || usesTVOS || customisesRestoredSystem {
+        } else if noTemplate || requiresStandaloneRestore || customisesRestoredSystem {
             .none
         } else {
             .automatic

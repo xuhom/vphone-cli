@@ -506,8 +506,13 @@ struct VPhoneLaunchpadNewMachineView: View {
             Text("With \(cloudOS): the kernelcache is rebuilt with the watch's kexts, which asks for administrator access once.")
                 .foregroundStyle(.secondary)
         } else if let selectedGuest, let cloudOS = selectedPairing?.recommendedCloudOS.name {
-            Text("Recommended firmware pairings for \(selectedGuest.detailedName), with \(cloudOS).")
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Recommended firmware pairings for \(selectedGuest.detailedName), with \(cloudOS).")
+                if selectedGuest.isVision {
+                    Text("The visionOS research preset boots headless by default. The experimental desktop requires additional setup.")
+                }
+            }
+            .foregroundStyle(.secondary)
         } else if catalog == nil, let catalogError {
             Text(catalogError).foregroundStyle(.red)
         } else if catalog == nil {
@@ -849,10 +854,8 @@ struct VPhoneLaunchpadNewMachineView: View {
         usesCustomSources ? customGuestProductType : selectedGuest?.productType
     }
 
-    /// Apple TV, HomePod and HomeView are restored without iOS templates or slimming.
     private var requiresStandaloneRestore: Bool {
-        guestProductType?.hasPrefix("AppleTV") == true || guestProductType?.hasPrefix("AudioAccessory") == true
-            || guestProductType?.hasPrefix("HomeAccessory") == true
+        VPhoneLaunchpadFirmwareCatalog.requiresStandaloneRestore(forDevice: guestProductType)
     }
 
     private func applyGuestDefaults(previousProductType: String?) {

@@ -16,8 +16,7 @@ struct VPhoneLaunchpadSlimmingSections: View {
     var templateAvailable: Bool?
     @Binding var slimming: VPhoneLaunchpadSlimming
     let warnsAboutServiceTrimming: Bool
-    /// Apple TV and HomePod are restored on their own and not slimmed: templates and
-    /// slimming drive iOS Setup Assistant and its apps.
+    /// Templates and slimming drive iOS Setup Assistant and its apps.
     var requiresStandaloneRestore = false
     /// The `minimal` preset seals the system it restores, which the trim and
     /// setup boot of a template would write.
@@ -34,7 +33,7 @@ struct VPhoneLaunchpadSlimmingSections: View {
                     .disabled(requiresStandaloneRestore || forRestoredSystem)
             } footer: {
                 if requiresStandaloneRestore {
-                    Text("Apple TV and HomePod keep every file, service and app.")
+                    Text("Nothing is deleted from the System volume.")
                         .foregroundStyle(.secondary)
                 } else if forRestoredSystem {
                     Text("The Minimal preset keeps the restored system exactly as sealed.")
@@ -58,7 +57,7 @@ struct VPhoneLaunchpadSlimmingSections: View {
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 if requiresStandaloneRestore {
-                    Text("Apple TV and HomePod are restored on their own, with keys of their own. Templates are made for iPhone and iPad.")
+                    Text("The machine is restored on its own, with keys of its own.")
                 } else if forRestoredSystem {
                     Text("The Minimal preset restores the machine on its own, with keys of its own: building a template writes the system it seals.")
                 } else {

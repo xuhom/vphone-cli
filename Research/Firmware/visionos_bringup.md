@@ -42,6 +42,10 @@ Use visionOS 26.4 restore userland and cloudOS 26.4 boot/kernel components.
 Device detection recognizes RealityDevice14,1 and its xros erase identity.
 The shared cache resides directly under `/System/Library/Caches/com.apple.dyld`.
 
+In xuhom Launchpad 2.15.11, choose **Apple Vision Pro (research)** in New
+Machine. The catalog pairs the M2 Vision Pro's `23O247` IPSW with PCC
+`23E5207q` and creates the machine through the standalone restore path.
+
 The `visionos` preset supplies a headless baseline: donor board identity, PCC
 boot/kernel patches, GPU bundle, launchd cache support and an iPad-compatible
 agent for application management. It excludes iPhone UI, camera, routing and shared-cache injections.
