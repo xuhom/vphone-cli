@@ -1,5 +1,19 @@
 # Patch Comparison: Regular / Development / Jailbreak / Experimental
 
+> **xuhom upstream merge (2026-11-10).** Integrates upstream `9d9d796b`
+> and its 2.16.0 bundle contract. Retains the local Vision Pro firmware
+> pairing, Duo display controls and LAN audio capture permission. The
+> visionOS nonfatal-service default and TV DriverKit exclusions follow
+> the upstream presets.
+
+> **visionOS preset: nonfatal headset services (2026-11-09).**
+> The `visionos` preset now turns on
+> `system-launchdaemons-exp-visionos_nonfatal_services`. polarisd exits at once
+> on a VM ("Failed to register expert session"); with its panic-on-crash policy
+> intact, a freshly created visionOS 26.4 guest panicked at its first boot. The
+> patch keeps its identifier and stays off in every other preset; the UI
+> adapters stay opt-in. Details in `Research/Firmware/visionos_bringup.md`.
+
 > **xuhom upstream merge (2026-11-09).** Integrates upstream `1108af47`,
 > including the runtime USB DriverKit and cloudOS 26.1 TXM changes with
 > upstream's selection rules. Retains the local Vision Pro research pairing
@@ -14,6 +28,14 @@
 > the existing staged backup and receipt flow. `cfw patch-dt-driverkit`
 > performs only this property repair on an unencrypted virtual iPhone/iPad
 > DeviceTree asset, preserving IMG4 personalization and compression.
+>
+> The Apple TV, Apple TV 4K, HomePod mini and HomeView presets block the
+> Preboot repair (it is in `tvOSBlockedPatches`), and the visionOS preset
+> blocks both identifiers. The repair only ever runs on iPhone and iPad
+> guests, but `cfw install` refuses a TV-family guest whose plan enables any
+> guest patch its gate does not admit: with the repair on, every Apple TV
+> 4K creation stopped after the restore (2.16.0 candidate on macOS 27.2,
+> 2026-11-09). `TV family presets pass their installation gates` pins it.
 >
 > The motivation is a runtime tree with no `supports-driverkit` capability,
 > no enumerated virtual USB touchscreen and `AppleUserHIDDrivers` launch

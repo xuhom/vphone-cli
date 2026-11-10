@@ -119,7 +119,10 @@ struct VPhoneVirtualMachineCreateCommand: ParsableCommand {
         selectedGuest?.usesTVOS == true
     }
 
-    private var requiresStandaloneRestore: Bool {
+    /// Templates and their setup boot drive iOS Setup Assistant and its apps,
+    /// and wait for data migration, which a headless visionOS guest never
+    /// finishes. Launchpad builds these guests without a template too.
+    private var buildsWithoutTemplate: Bool {
         usesTVOS || selectedGuest?.family == .vision
     }
 
@@ -193,7 +196,7 @@ struct VPhoneVirtualMachineCreateCommand: ParsableCommand {
            VPhoneGuestDevice.named(device)?.family != .homePod {
             throw ValidationError("--ota-source and --ota-key require an OTA userland device, such as --device AppleTV14,1 or AudioAccessory5,1.")
         }
-        if requiresStandaloneRestore {
+        if buildsWithoutTemplate {
             // Templates and their setup boot drive iOS Setup Assistant and its apps.
             if template != nil {
                 throw ValidationError("This guest is built without a template. Remove --template.")
@@ -251,7 +254,7 @@ struct VPhoneVirtualMachineCreateCommand: ParsableCommand {
         let (patchPreset, networkMode, unlocks) = try checkOptions()
         let templateUse: VPhoneVirtualMachineCreator.TemplateUse = if let template {
             .identifier(template)
-        } else if noTemplate || requiresStandaloneRestore || customisesRestoredSystem {
+        } else if noTemplate || buildsWithoutTemplate || customisesRestoredSystem {
             .none
         } else {
             .automatic

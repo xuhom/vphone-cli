@@ -274,6 +274,7 @@ public enum FirmwarePatchSetCatalog {
         "preboot-cfw-devicetree_foldable_product_id",
         "preboot-cfw-devicetree_foldable_displays",
         "preboot-cfw-devicetree_microphone_array",
+        FirmwareGuestSystemPatchSet.prebootVirtualUSBDriverKit,
         RestoreRamDiskSealPatcher.patchIdentifier,
         "system-apps-cfw-attitude",
         FirmwareGuestSystemPatchSet.signInSheets,
@@ -485,10 +486,13 @@ public enum FirmwarePatchSetCatalog {
     )
 
     /// Headless restore baseline. Native UI experiments remain separate choices.
+    /// The headset jobs lose their panic-on-crash policy: polarisd exits at once
+    /// on a VM ("Failed to register expert session") and would panic every
+    /// freshly created guest at its first boot.
     public static let visionOSGuestPatches: Set<String> = [
         "system-vphoned-boot-install", "system-launchd_cache_loader-boot-unsecure_cache_gate",
         "system-seputil-boot-gigalocker_uuid", "system-gigalocker-boot-rename",
-        "system-extensions-boot-gpu_bundle",
+        "system-extensions-boot-gpu_bundle", FirmwareGuestSystemPatchSet.visionOSNonfatalServices,
     ]
 
     public static let visionOSDeviceTreePatches: Set<String> = [
@@ -504,7 +508,7 @@ public enum FirmwarePatchSetCatalog {
         summary: "Experimental visionOS restore with its donor board identity, the PCC boot chain, paravirtual GPU and application management. Native UI adapters are independent opt-in experiments; physical headset hardware is not emulated.",
         patchSets: bundledReferences,
         selection: .block(
-            manualOnlyPatches
+            manualOnlyPatches.subtracting(visionOSGuestPatches)
                 .union(Set(allDeclarations.filter { !$0.target.isBootChain }.map(\.identifier)).subtracting(visionOSGuestPatches))
                 .union(Set(FirmwareDeviceTreePatchSet.manifest.patches.map(\.identifier)).subtracting(visionOSDeviceTreePatches))
                 .union([proMotionPatch, paravirtTask3Patch]),
