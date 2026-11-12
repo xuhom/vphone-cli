@@ -90,6 +90,7 @@
 			<string>dyld-cfw-gles_primitive_restart</string>
 			<string>dyld-cfw-metal_cache_reuse_key</string>
 			<string>dyld-cfw-gles_point_draw</string>
+			<string>dyld-cfw-gles_depth_clip</string>
 			<string>dyld-exp-hv_vmm</string>
 			<string>dyld-exp-mis_trust_auth</string>
 			<string>dyld-exp-settings_software_update_row</string>
@@ -124,6 +125,18 @@
 			<string>system-campo-cfw-entitlements</string>
 			<string>system-cibarcode-cfw-arm64e_x1</string>
 		<string>system-homepopaccessibility-cfw-arm64e_x1</string>
+			<string>system-libdispatch-cfw-arm64e_x1_introspection</string>
+			<string>system-libbacktracerecording-cfw-arm64e_x1</string>
+			<string>system-libmainthreadchecker-cfw-arm64e_x1</string>
+			<string>system-librpac-cfw-arm64e_x1</string>
+			<string>system-libviewdebuggersupport-cfw-arm64e_x1</string>
+			<string>system-liblogredirect-cfw-arm64e_x1</string>
+			<string>system-libmtlhud-cfw-arm64e_x1</string>
+			<string>system-libglinterpose-cfw-arm64e_x1</string>
+			<string>system-libmetalmetricsinterpose-cfw-arm64e_x1</string>
+			<string>system-debughierarchyfoundation-cfw-arm64e_x1</string>
+			<string>system-gputoolscapture-cfw-arm64e_x1</string>
+			<string>system-gputoolsdiagnostics-cfw-arm64e_x1</string>
 			<string>system-cryptexd-exp-homepod_staging</string>
 			<string>system-debugserver-cfw-install</string>
 			<string>system-diskimagesiod-cfw-is_mount_complete</string>

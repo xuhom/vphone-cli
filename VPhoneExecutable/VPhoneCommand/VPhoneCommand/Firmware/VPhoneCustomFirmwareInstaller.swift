@@ -297,10 +297,6 @@ struct VPhoneCustomFirmwareInstaller {
         guard missingGLESDependencies.isEmpty else {
             throw ValidationError("The GLES primitive-restart correction requires these selected guest patches: \(missingGLESDependencies.joined(separator: ", ")).")
         }
-        let missingCacheDependencies = FirmwareGuestPatchResolution.missingCompilerCacheDependencies(enabled: effectiveEnabled)
-        guard missingCacheDependencies.isEmpty else {
-            throw ValidationError("GPU compiler cache versioning with cross-boot reuse requires these selected guest patches: \(missingCacheDependencies.joined(separator: ", ")).")
-        }
         let missingGlowDependencies = FirmwareGuestPatchResolution.missingHomePodSoundGlowDependencies(enabled: effectiveEnabled)
         guard missingGlowDependencies.isEmpty else {
             throw ValidationError("The HomePod Sound Glow patch requires these selected guest patches: \(missingGlowDependencies.joined(separator: ", ")).")
@@ -402,7 +398,10 @@ struct VPhoneCustomFirmwareInstaller {
         if isOTAUpdate, !cloned {
             throw ValidationError("The OTA update needs a private APFS disk clone; the original disk was left untouched.")
         }
-        if effectiveEnabled.contains(FirmwareGuestSystemPatchSet.paravirtGPUCompilerCache), !cloned {
+        if !effectiveEnabled.union(receiptGuest ?? priorFallback).isDisjoint(with: [
+            FirmwareGuestSystemPatchSet.paravirtGPUCompilerCache,
+            FirmwareGuestSystemPatchSet.glesDepthClip,
+        ]), !cloned {
             throw ValidationError("GPU compiler cache versioning needs a private APFS disk clone so the compiler and its cache identity update together; the original disk was left untouched.")
         }
         if device.usesTVOS {
@@ -515,13 +514,16 @@ struct VPhoneCustomFirmwareInstaller {
         // the receipt. Each step that applies or reverts a guest patch adds to
         // it, so what it holds at the end is exactly the `Guest` part.
         var liveGuest = Set<String>()
+        var notApplicableGuest = Set<String>()
         // Resolved once the system volume is mounted (it needs the "was
         // installed" signal there), then used again by the Preboot pass.
         var priorGuest = Set<String>()
         var installedOTAUserland: VPhoneRestoreInfo.OSVersion?
-        do {
+        try autoreleasepool {
             // Every descriptor on a guest volume lives in this scope, so none
-            // is left open to hold the volume busy when it is unmounted.
+            // is left open to hold the volume busy when it is unmounted. The
+            // pool drains what Foundation and MachOKit autorelease here too,
+            // such as the guest's shared cache mapped by in-process patchers.
             let systemRoot = try openGuestVolume("system", device: "\(container)s1", in: work)
             let xartRoot = try openGuestVolume("xart", device: "\(container)s3", in: work)
             // `launchd.plist.bak` exists only after a full install's first
@@ -561,6 +563,7 @@ struct VPhoneCustomFirmwareInstaller {
                     homePodDisplay: homePodDisplay,
                     plan: plan,
                     priorGuest: priorGuest,
+                    notApplicable: &notApplicableGuest,
                     kernelPatches: receiptKernel,
                     environmentOnly: false,
                     strict: isOTAUpdate,
@@ -584,6 +587,7 @@ struct VPhoneCustomFirmwareInstaller {
                     homePodDisplay: homePodDisplay,
                     plan: plan,
                     priorGuest: priorGuest,
+                    notApplicable: &notApplicableGuest,
                     kernelPatches: receiptKernel,
                     environmentOnly: true,
                 )
@@ -629,7 +633,6 @@ struct VPhoneCustomFirmwareInstaller {
         // product repair on a non-iPhone, and the build spoof with no value set. A
         // guest whose board tree could not be recovered is not among them: its
         // repair is missing, and drift should keep saying so.
-        var notApplicableGuest = Set<String>()
         if !device.presentsBoard {
             notApplicableGuest.insert(FirmwareGuestSystemPatchSet.prebootBoardAudio)
         }
@@ -1364,12 +1367,15 @@ struct VPhoneCustomFirmwareInstaller {
         homePodDisplay: Data?,
         plan: VPhoneVirtualMachinePatchPlan?,
         priorGuest: Set<String>,
+        notApplicable: inout Set<String>,
         kernelPatches: Set<String>?,
         environmentOnly: Bool,
         strict: Bool = false,
     ) throws -> Set<String> {
         var live = Set<String>()
         var failures: [String] = []
+        var skippedGLES = Set<String>()
+        var preservedGLES = Set<String>()
 
         // Whether the VM's plan (its guest half re-resolved from the current
         // selection) turned this guest patch on. A VM with no plan gets every
@@ -1377,6 +1383,8 @@ struct VPhoneCustomFirmwareInstaller {
         // preferences, motion sensors and version-gated GLES compatibility still
         // require an explicit plan.
         func on(_ identifier: String) -> Bool {
+            if preservedGLES.contains(identifier) { return priorGuest.contains(identifier) }
+            if skippedGLES.contains(identifier) { return false }
             guard let plan else {
                 return !FirmwareGuestSystemPatchSet.settingsRowPatches.contains(identifier)
                     && identifier != FirmwareGuestSystemPatchSet.gyroscope
@@ -1394,6 +1402,7 @@ struct VPhoneCustomFirmwareInstaller {
                     && identifier != FirmwareGuestSystemPatchSet.ios16Touchscreen
                     && identifier != FirmwareGuestSystemPatchSet.ios16KeybaglessUI
                     && identifier != FirmwareGuestSystemPatchSet.glesUpperLeft
+                    && identifier != FirmwareGuestSystemPatchSet.glesDepthClip
                     && identifier != FirmwareGuestSystemPatchSet.ios18GPUTransport
                     && identifier != FirmwareGuestSystemPatchSet.paravirtGPUCompilerCache
                     && identifier != FirmwareGuestSystemPatchSet.visionOSSkipBuddy
@@ -1559,6 +1568,32 @@ struct VPhoneCustomFirmwareInstaller {
                 preserveEntitlements: true,
                 bundle: FirmwareGuestSystemPatchSet.ciBarcodeBundlePath,
             )
+        }
+
+        // Debuggers can receive these standalone libraries' X1 faults before
+        // the inherited translator. Inspect the actual image after cryptex
+        // installation; older arm64e libraries must not be backed up or re-signed.
+        for image in FirmwareGuestSystemPatchSet.arm64eX1DebugImages {
+            let enabled = plan == nil ? guestDevice.family == .iPhone : on(image.identifier)
+            do {
+                let outcome = try CustomFirmwareArm64eX1Installation.update(
+                    system: system,
+                    identifier: image.identifier, path: image.path, bundle: image.bundle,
+                    enabled: enabled, priorApplied: priorGuest.contains(image.identifier),
+                    sealBundle: { try sealGuestBundle(system: system, bundle: $0, preserveEntitlements: true) },
+                )
+                switch outcome {
+                case .applied, .notRevertible: live.insert(image.identifier)
+                case .notApplicable: notApplicable.insert(image.identifier)
+                case .inactive: break
+                }
+            } catch let error as CustomFirmwareArm64eX1Installation.RollbackFailure {
+                throw error
+            } catch {
+                failures.append(image.identifier)
+                print("  [!] \(image.identifier): patch step failed, left in its prior state: \(error)")
+                if priorGuest.contains(image.identifier) { live.insert(image.identifier) }
+            }
         }
 
         // 0. A cache whose span alone overruns the guest kernel's shared region
@@ -2014,6 +2049,7 @@ struct VPhoneCustomFirmwareInstaller {
             (FirmwareGuestSystemPatchSet.metalVertexIDFormat, "patch-metal-vertex-id-format", [dsc]),
             (FirmwareGuestSystemPatchSet.glesPrimitiveRestart, "patch-gles-primitive-restart", [dsc]),
             (FirmwareGuestSystemPatchSet.glesPointDraw, "patch-gles-point-draw", [dsc]),
+            (FirmwareGuestSystemPatchSet.glesDepthClip, "patch-gles-depth-clip", [dsc]),
             (FirmwareGuestSystemPatchSet.homeViewEnvironmentService, "patch-homeview-environment", [dsc]),
             (FirmwareGuestSystemPatchSet.settingsSoftwareUpdate, "patch-settings-software-update", [dsc]),
             (FirmwarePatchSetCatalog.misTrustAuthPatch, "patch-mis-trust-auth", [dsc]),
@@ -2036,17 +2072,105 @@ struct VPhoneCustomFirmwareInstaller {
         if textRecognitionModels || plan?.isEnabled(textRecognition) != true {
             dyld.append((textRecognition, "patch-text-recognition-ane", [dsc]))
         }
+        // Probe the actual binaries without changing the cache, undo log or
+        // guest files. A discovery miss disables a new paired correction;
+        // verification and I/O failures still discard the private clone.
+        let depthClip = FirmwareGuestSystemPatchSet.glesDepthClip
+        let compilerIdentity = FirmwareGuestSystemPatchSet.paravirtGPUCompilerCache
+        let cacheKey = FirmwareGuestSystemPatchSet.metalCacheReuseKey
+        let gpuBundleID = "system-extensions-boot-gpu_bundle"
+        let gpuPath = "System/Library/Extensions/\(VPhonePCCGPUDriver.name)"
+        let pluginLeaf = "libAppleParavirtCompilerPluginIOGPUFamily.dylib"
+        let enabledGLES = Set(plan?.enabledPatches ?? [])
+        var unavailableGLES = Set<String>()
+        func probeGLES(_ id: String, _ body: () throws -> Void) throws {
+            do {
+                try body()
+            } catch {
+                guard FirmwareGuestPatchResolution.isUnsupportedGLESLayout(error) else { throw error }
+                unavailableGLES.insert(id)
+                print("  [·] \(id): unsupported binary layout; no writes: \(error)")
+            }
+        }
+        if on(cacheKey) {
+            try probeGLES(cacheKey) {
+                _ = try DyldSharedCacheMetalCacheReusePatcher.patch(
+                    chunksDirectory: URL(fileURLWithPath: dsc), dryRun: true, log: nil)
+            }
+        }
+        if on(FirmwareGuestSystemPatchSet.metalVertexIDFormat) {
+            try probeGLES(FirmwareGuestSystemPatchSet.metalVertexIDFormat) {
+                _ = try DyldSharedCacheMetalVertexFormatPatcher.patch(
+                    chunksDirectory: URL(fileURLWithPath: dsc), dryRun: true, log: nil)
+            }
+        }
+        if on(FirmwareGuestSystemPatchSet.glesPrimitiveRestart) {
+            try probeGLES(FirmwareGuestSystemPatchSet.glesPrimitiveRestart) {
+                _ = try DyldSharedCacheGLESPrimitiveRestartPatcher.patch(
+                    chunksDirectory: URL(fileURLWithPath: dsc), dryRun: true, log: nil)
+            }
+        }
+        if on(FirmwareGuestSystemPatchSet.glesPointDraw) {
+            try probeGLES(FirmwareGuestSystemPatchSet.glesPointDraw) {
+                _ = try DyldSharedCacheGLESPointDrawPatcher.patch(
+                    chunksDirectory: URL(fileURLWithPath: dsc), dryRun: true, log: nil)
+            }
+        }
+        if on(compilerIdentity), on(gpuBundleID) {
+            try probeGLES(compilerIdentity) {
+                let driver: Data
+                if let restore {
+                    driver = try restore.readData(".pcc-gpu/\(VPhonePCCGPUDriver.name)/AppleParavirtGPUMetalIOGPUFamily")
+                } else {
+                    let path = FirmwareGuestSystemPatchSet.paravirtGPUDriverPath
+                    driver = try system.readData(system.exists("\(path).bak") ? "\(path).bak" : path)
+                }
+                _ = try CustomFirmwareParavirtGPUCompilerCache.resolve(in: driver)
+            }
+        }
+        if on(depthClip),
+           FirmwareGuestPatchResolution.missingGLESDepthDependencies(
+               enabled: enabledGLES, previouslyApplied: priorGuest).isEmpty {
+            try probeGLES(depthClip) {
+                try DyldSharedCacheGLESDepthClipPatcher.patch(
+                    chunksDirectory: URL(fileURLWithPath: dsc), dryRun: true, log: nil)
+            }
+            if unavailableGLES.isDisjoint(with: [depthClip, compilerIdentity]),
+               FirmwareGuestPatchResolution.missingCompilerCacheDependencies(enabled: enabledGLES).isEmpty {
+                var plugin = try restore.map {
+                    try $0.readData(".pcc-gpu/\(VPhonePCCGPUDriver.name)/\(pluginLeaf)")
+                } ?? Data(contentsOf: resources.gpuCompilerPlugin)
+                _ = try CustomFirmwareGLESDepthConfiguration.configure(&plugin, enabled: true)
+            }
+        }
+        let policy = FirmwareGuestPatchResolution.glesUpdatePolicy(
+            enabled: enabledGLES, previouslyApplied: priorGuest, unavailable: unavailableGLES,
+            gpuInstalled: try system.isRegularFile("\(gpuPath)/\(pluginLeaf)"))
+        skippedGLES = policy.skipped
+        preservedGLES = policy.preserved
+        live.formUnion(priorGuest.intersection(preservedGLES))
+        if !preservedGLES.isEmpty {
+            print("  [·] GLES update prerequisites unavailable; preserving the installed GPU, compiler, renderer and cache group.")
+        } else if skippedGLES.contains(depthClip) {
+            print("  [·] GLES signed depth clipping skipped as a pair; renderer and compiler retain the unconverted depth convention.")
+        }
         try applyDyldPatches(
-            dyld, dsc: dsc, cacheRelative: cacheRelative, system: system, plan: plan, priorGuest: priorGuest,
+            dyld.filter { !preservedGLES.contains($0.id) },
+            dsc: dsc, cacheRelative: cacheRelative, system: system, plan: plan, priorGuest: priorGuest,
+            disabled: skippedGLES,
             live: &live, failures: &failures,
         )
         try requireX1Bootstrap()
+
+        guard on(depthClip) == live.contains(depthClip), !failures.contains(depthClip) else {
+            throw ValidationError("GLES viewport update or rollback failed; the private disk clone was discarded.")
+        }
 
         // Selected is not necessarily applied: optional DSC failures are
         // isolated above. Stop before refreshing the compiler if cache reuse
         // would still bypass its new identity. The private clone is discarded.
         let cacheDependencies = FirmwareGuestPatchResolution.missingCompilerCacheDependencies(
-            enabled: Set(plan?.enabledPatches ?? []), applied: live,
+            enabled: enabledGLES.subtracting(skippedGLES).subtracting(preservedGLES), applied: live,
         )
         guard cacheDependencies.isEmpty else {
             throw ValidationError("Required GPU compiler cache patches failed; the compiler was not updated: \(cacheDependencies.joined(separator: ", ")).")
@@ -2214,7 +2338,7 @@ struct VPhoneCustomFirmwareInstaller {
         // compiler plugin is this project's own build, so an update still
         // brings that one up to date.
         var gpuBundleReinstalled = false
-        if on("system-extensions-boot-gpu_bundle") {
+        if !preservedGLES.contains(gpuBundleID), on(gpuBundleID) {
             isolate(["system-extensions-boot-gpu_bundle"]) {
                 if let restore {
                     try installGPUBundle(restore: restore, system: system, owner: owner)
@@ -2231,6 +2355,30 @@ struct VPhoneCustomFirmwareInstaller {
                     }
                 }
                 live.insert("system-extensions-boot-gpu_bundle")
+            }
+        }
+
+        // This is deliberately outside optional-patch isolation. The DSC
+        // viewport and compiler byte must commit or roll back together.
+        if !preservedGLES.contains(depthClip), on(depthClip) || priorGuest.contains(depthClip) {
+            guard !failures.contains("system-extensions-boot-gpu_bundle") else {
+                throw ValidationError("GLES compiler refresh failed; the private disk clone was discarded.")
+            }
+            let gpu = "System/Library/Extensions/\(VPhonePCCGPUDriver.name)"
+            let plugin = "\(gpu)/libAppleParavirtCompilerPluginIOGPUFamily.dylib"
+            let stagedName = "gles-depth-compiler.dylib"
+            try work.directory.removeItem(stagedName)
+            try system.copyFile(from: plugin, to: stagedName, in: work.directory)
+            var data = try Data(contentsOf: work.file(stagedName))
+            if try CustomFirmwareGLESDepthConfiguration.configure(&data, enabled: on(depthClip)) {
+                try data.write(to: work.file(stagedName))
+                _ = try tool("/usr/bin/codesign", [
+                    "-f", "-s", "-", "--timestamp=none",
+                    "--identifier", "libAppleParavirtCompilerPluginIOGPUFamily",
+                    work.file(stagedName).path,
+                ])
+                try system.replaceFile(plugin, fromFileAt: work.file(stagedName), mode: 0o755, owner: Self.guestOwner)
+                try sealGuestBundle(system: system, bundle: gpu)
             }
         }
 
@@ -2253,6 +2401,7 @@ struct VPhoneCustomFirmwareInstaller {
         let gpuBundle = "System/Library/Extensions/\(VPhonePCCGPUDriver.name)"
         let gpuDriverOn = gpuDriverPatches.filter { on($0.id) }
         isolate(gpuDriverPatches.map(\.id)) {
+            guard preservedGLES.isEmpty else { return }
             if !gpuDriverOn.isEmpty {
                 let compilerCache = gpuDriverOn.first { $0.id == FirmwareGuestSystemPatchSet.paravirtGPUCompilerCache }
                 let pluginName = "gpu-compiler-cache-plugin.dylib"
@@ -2848,15 +2997,18 @@ struct VPhoneCustomFirmwareInstaller {
         system: VPhoneConfinedDirectory,
         plan: VPhoneVirtualMachinePatchPlan?,
         priorGuest: Set<String>,
+        disabled: Set<String> = [],
         live: inout Set<String>,
         failures: inout [String],
     ) throws {
         func enabled(_ id: String) -> Bool {
+            if disabled.contains(id) { return false }
             if id == FirmwareGuestSystemPatchSet.ios16PortsLookup { return plan?.isEnabled(id) == true }
             if id == FirmwareGuestSystemPatchSet.homeViewEnvironmentService
                 || id == FirmwareGuestSystemPatchSet.metalCacheReuseKey
                 || id == FirmwareGuestSystemPatchSet.metalVertexIDFormat
                 || id == FirmwareGuestSystemPatchSet.glesPointDraw
+                || id == FirmwareGuestSystemPatchSet.glesDepthClip
                 || id == FirmwareGuestSystemPatchSet.glesPrimitiveRestart
                 || id == FirmwareGuestSystemPatchSet.textRecognitionANE {
                 return plan?.isEnabled(id) == true

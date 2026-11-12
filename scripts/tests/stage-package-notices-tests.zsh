@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=${0:a:h:h:h}
+zsh "$root/scripts/tests/package-notice-release-gate-tests.zsh"
 temporary=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/vphone-package-notices.XXXXXX")
 trap '/bin/rm -rf "$temporary"' EXIT
 packages="$temporary/SourcePackages"
@@ -16,6 +17,7 @@ collector="$root/scripts/stage-package-notices.zsh"
 [[ $(/usr/bin/stat -f '%Lp' "$temporary/notices/manifest.tsv") == 644 ]]
 [[ $(/usr/bin/stat -f '%Lp' "$temporary/notices/fixture/$revision/checkout/LICENSE") == 644 ]]
 [[ $(/usr/bin/stat -f '%Lp' "$temporary/notices/fixture/$revision/checkout") == 755 ]]
+"$collector" --check "$temporary/notices" --require-notices
 /usr/bin/git -C "$root" show "$revision:LICENSE" |
     /usr/bin/cmp - "$temporary/notices/fixture/$revision/checkout/LICENSE"
 /usr/bin/cmp "$packages/artifacts/fixture/Fake.xcframework/Licenses/dependency.txt" \
@@ -23,6 +25,10 @@ collector="$root/scripts/stage-package-notices.zsh"
 [[ ! -e "$temporary/notices/fixture/$revision/artifacts-${packages:h:t}/Fake.xcframework/payload.bin" ]]
 /bin/rm "$packages/artifacts/fixture/Fake.xcframework/Licenses/dependency.txt"
 "$collector" "$temporary/notices" "$temporary/pins.json" "$packages"
+if "$collector" --check "$temporary/notices" --require-notices; then
+    print -u2 'An artifact without notices unexpectedly passed distribution admission'
+    exit 1
+fi
 [[ ! -e "$temporary/notices/fixture/$revision/artifacts-${packages:h:t}/Fake.xcframework/Licenses/dependency.txt" ]]
 print -r -- 'changed' >> "$temporary/notices/fixture/$revision/checkout/LICENSE"
 if "$collector" --check "$temporary/notices"; then

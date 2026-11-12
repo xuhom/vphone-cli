@@ -50,6 +50,7 @@ public enum FirmwareGuestSystemPatchSet {
     public static let metalVertexIDFormat = "dyld-cfw-metal_vertex_id_format"
     public static let glesPrimitiveRestart = "dyld-cfw-gles_primitive_restart"
     public static let glesPointDraw = "dyld-cfw-gles_point_draw"
+    public static let glesDepthClip = "dyld-cfw-gles_depth_clip"
     public static let metalCacheReuseKey = "dyld-cfw-metal_cache_reuse_key"
     public static let textRecognitionANE = "dyld-cfw-text_recognition_ane"
     public static let gyroscope = "system-backboardd-cfw-gyroscope"
@@ -75,6 +76,36 @@ public enum FirmwareGuestSystemPatchSet {
         homePopAccessibilityBundlePath + "/SpringBoardHomePopAccessibility"
     public static let ciBarcodeBundlePath = "System/Library/CoreImage/CIBarcode.cifilter"
     public static let ciBarcodeExecutablePath = ciBarcodeBundlePath + "/CIBarcode"
+
+    /// Standalone debugger libraries and their dependencies, outside the shared
+    /// cache. Select by the installed binary's X1 instructions, not its OS label.
+    /// Paths are relative to System, including the installed OS cryptex.
+    public static let arm64eX1DebugImages: [(identifier: String, path: String, bundle: String?)] = [
+        ("system-libdispatch-cfw-arm64e_x1_introspection", "usr/lib/system/introspection/libdispatch.dylib", nil),
+        ("system-libbacktracerecording-cfw-arm64e_x1", "usr/lib/libBacktraceRecording.dylib", nil),
+        ("system-libmainthreadchecker-cfw-arm64e_x1", "usr/lib/libMainThreadChecker.dylib", nil),
+        ("system-librpac-cfw-arm64e_x1", "usr/lib/libRPAC.dylib", nil),
+        ("system-libviewdebuggersupport-cfw-arm64e_x1", "usr/lib/libViewDebuggerSupport.dylib", nil),
+        ("system-liblogredirect-cfw-arm64e_x1", "System/Cryptexes/OS/usr/lib/libLogRedirect.dylib", nil),
+        ("system-libmtlhud-cfw-arm64e_x1", "System/Cryptexes/OS/usr/lib/libMTLHud.dylib", nil),
+        ("system-libglinterpose-cfw-arm64e_x1", "System/Cryptexes/OS/usr/lib/libglInterpose.dylib", nil),
+        ("system-libmetalmetricsinterpose-cfw-arm64e_x1", "System/Cryptexes/OS/usr/lib/libMetalMetricsInterpose.dylib", nil),
+        (
+            "system-debughierarchyfoundation-cfw-arm64e_x1",
+            "System/Library/PrivateFrameworks/DebugHierarchyFoundation.framework/DebugHierarchyFoundation",
+            "System/Library/PrivateFrameworks/DebugHierarchyFoundation.framework"
+        ),
+        (
+            "system-gputoolscapture-cfw-arm64e_x1",
+            "System/Library/PrivateFrameworks/GPUToolsCapture.framework/GPUToolsCapture",
+            "System/Library/PrivateFrameworks/GPUToolsCapture.framework"
+        ),
+        (
+            "system-gputoolsdiagnostics-cfw-arm64e_x1",
+            "System/Library/PrivateFrameworks/GPUToolsDiagnostics.framework/GPUToolsDiagnostics",
+            "System/Library/PrivateFrameworks/GPUToolsDiagnostics.framework"
+        ),
+    ]
 
     public static let paravirtGPUIndexOffset = "system-paravirt_gpu-cfw-heap_index_offset"
     public static let paravirtGPUPrimitiveRestart = "system-paravirt_gpu-cfw-primitive_restart"
@@ -457,6 +488,22 @@ public enum FirmwareGuestSystemPatchSet {
 
             // MARK: Shared Cache Policy
 
+            // Depth conversion and its cache dependencies are not tied to an
+            // OS release. Their patchers verify the actual binary semantics;
+            // unsupported layouts skip a new pair before any writes. Existing
+            // paired state is preserved when its upgrade cannot be completed.
+            VPhonePatchDeclaration(
+                identifier: glesDepthClip,
+                title: "GLES signed depth clipping",
+                summary: """
+                Converts GLES vertex positions and renderer depth endpoints together so \
+                the paravirtual Metal path preserves OpenGL's signed clip volume and \
+                glDepthRange. Versions the configured compiler plugin's shader cache. \
+                Native Metal shaders and viewport calls are unchanged.
+                """,
+                target: .dyldSharedCache,
+            ),
+
             VPhonePatchDeclaration(
                 identifier: metalCacheReuseKey,
                 title: "Metal cache version validation",
@@ -466,10 +513,6 @@ public enum FirmwareGuestSystemPatchSet {
                 cache reuse with the same identity and the opt-out path remain intact.
                 """,
                 target: .dyldSharedCache,
-                applicability: VPhonePatchApplicability(
-                    iOSBase: .release(major: 26, minor: 6),
-                    cloudOS: .release(major: 26, minor: 4),
-                ),
             ),
             VPhonePatchDeclaration(
                 identifier: glesPointDraw,
@@ -482,7 +525,6 @@ public enum FirmwareGuestSystemPatchSet {
                 """,
                 target: .dyldSharedCache,
                 applicability: VPhonePatchApplicability(
-                    iOSBase: .release(major: 26, minor: 6),
                     cloudOS: .release(major: 26, minor: 4),
                 ),
             ),
@@ -498,7 +540,6 @@ public enum FirmwareGuestSystemPatchSet {
                 """,
                 target: .dyldSharedCache,
                 applicability: VPhonePatchApplicability(
-                    iOSBase: .release(major: 26, minor: 6),
                     cloudOS: .release(major: 26, minor: 4),
                 ),
             ),
@@ -513,7 +554,6 @@ public enum FirmwareGuestSystemPatchSet {
                 """,
                 target: .dyldSharedCache,
                 applicability: VPhonePatchApplicability(
-                    iOSBase: .release(major: 26, minor: 6),
                     cloudOS: .release(major: 26, minor: 4),
                 ),
             ),
@@ -745,11 +785,10 @@ public enum FirmwareGuestSystemPatchSet {
                 Selects AppleMetalGLRenderer's UPPER_LEFT viewport and scissor path at \
                 process startup because the paravirtual GPU does not preserve IOSurface \
                 attachment yInvert, which reverses GLES screen output. An explicit \
-                environment setting takes precedence. Validated on iOS 26.6 with cloudOS 26.4.
+                environment setting takes precedence.
                 """,
                 target: .guestFile(path: glesUpperLeftMarker),
                 applicability: VPhonePatchApplicability(
-                    iOSBase: .release(major: 26, minor: 6),
                     cloudOS: .release(major: 26, minor: 4),
                 ),
             ),
@@ -819,10 +858,6 @@ public enum FirmwareGuestSystemPatchSet {
                 existing caches are retained.
                 """,
                 target: .guestExecutable(path: "/\(paravirtGPUDriverPath)"),
-                applicability: VPhonePatchApplicability(
-                    iOSBase: .release(major: 26, minor: 6),
-                    cloudOS: .release(major: 26, minor: 4),
-                ),
             ),
             VPhonePatchDeclaration(
                 identifier: "system-vphoned-boot-install",
@@ -1218,7 +1253,14 @@ public enum FirmwareGuestSystemPatchSet {
                 """,
                 target: .guestFile(path: "/System/Library/CoreServices/SystemVersion.plist"),
             ),
-        ],
+        ] + arm64eX1DebugImages.map { image in
+            VPhonePatchDeclaration(
+                identifier: image.identifier,
+                title: "\((image.path as NSString).lastPathComponent) X1 compatibility",
+                summary: "Lowers unsupported X1 instructions in this standalone debug library before a debugger can intercept their faults. Missing images and images needing no conversion keep their original bytes and signature.",
+                target: .guestFile(path: "/" + image.path),
+            )
+        },
         requires: ["vphone.kernel.base"],
         provides: ["vphone.guest.system"],
     )

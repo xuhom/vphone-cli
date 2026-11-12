@@ -247,6 +247,7 @@ public enum FirmwarePatchSetCatalog {
     /// plain-arm64 HD cannot load it), debugserver, the environment hooks, and
     /// the iPhone 19 ARM64E_X1 boot path.
     public static let tvOSBlockedPatches: Set<String> = [
+        FirmwareGuestSystemPatchSet.glesDepthClip,
         FirmwareGuestSystemPatchSet.metalCacheReuseKey,
         FirmwareGuestSystemPatchSet.glesPointDraw,
         FirmwareGuestSystemPatchSet.glesPrimitiveRestart,
@@ -258,6 +259,18 @@ public enum FirmwarePatchSetCatalog {
         FirmwareGuestSystemPatchSet.arm64eX1CacheRemaining,
         FirmwareGuestSystemPatchSet.arm64eX1CIBarcode,
         FirmwareGuestSystemPatchSet.arm64eX1HomePopAccessibility,
+        "system-libdispatch-cfw-arm64e_x1_introspection",
+        "system-libbacktracerecording-cfw-arm64e_x1",
+        "system-libmainthreadchecker-cfw-arm64e_x1",
+        "system-librpac-cfw-arm64e_x1",
+        "system-libviewdebuggersupport-cfw-arm64e_x1",
+        "system-liblogredirect-cfw-arm64e_x1",
+        "system-libmtlhud-cfw-arm64e_x1",
+        "system-libglinterpose-cfw-arm64e_x1",
+        "system-libmetalmetricsinterpose-cfw-arm64e_x1",
+        "system-debughierarchyfoundation-cfw-arm64e_x1",
+        "system-gputoolscapture-cfw-arm64e_x1",
+        "system-gputoolsdiagnostics-cfw-arm64e_x1",
         "dyld-boot-iomfb_force_kern",
         "dyld-boot-iomfb_swapend",
         "dyld-boot-lockdown_mode",

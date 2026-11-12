@@ -495,9 +495,11 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Asks vphoned for the interface orientation once a second (a foldable
-    /// guest four times a second). Guests without `display.orientation` stay
-    /// portrait. A read that overlaps a rotation the menu started is dropped:
-    /// it may predate the turn.
+    /// guest four times a second), and with it the way the device is held,
+    /// which the interface takes up by itself once the app in front allows
+    /// it. Guests without `display.orientation` stay portrait. A read that
+    /// overlaps a rotation the menu started is dropped: it may predate the
+    /// turn.
     private func pollOrientation() {
         guard !orientationPollInFlight,
               let control, control.isConnected, !control.isChangingDisplayState,
@@ -525,11 +527,9 @@ class VPhoneVirtualMachineWindowController: NSObject, NSWindowDelegate {
                 if foldableGuest, !settled { return }
                 if settled { control.followGuestFold(angle: foldAngle) }
             }
-            guard !control.isChangingOrientation,
-                  let degrees = (result["degrees"] as? NSNumber)?.intValue,
-                  let orientation = VPhoneDisplayOrientation(degrees: degrees)
-            else { return }
-            control.interfaceOrientation = orientation
+            guard !control.isChangingOrientation else { return }
+            control.followOrientation(result)
+            guard let orientation = control.interfaceOrientation else { return }
             // A fold can change only the panel, leaving the same orientation
             // and therefore sending no orientation-observer notification.
             if pendingDuoPanel != nil, let window = displayWindow {
