@@ -120,7 +120,7 @@ final class VPhoneGuestControl {
 
     /// The guest interface orientation: the one the window last read, or the
     /// one a menu rotation turned it to. Nil until one is known, and again
-    /// after a disconnect.
+    /// once a disconnect has lasted `orientationHold`.
     var interfaceOrientation: VPhoneDisplayOrientation? {
         didSet {
             guard interfaceOrientation != oldValue else { return }
@@ -136,6 +136,21 @@ final class VPhoneGuestControl {
     /// front or the rotation lock keeps the interface from following. Nil
     /// when the guest publishes none (no gravity provider, an older vphoned).
     @ObservationIgnored var deviceOrientation: VPhoneDisplayOrientation?
+
+    /// How long the orientation outlives a disconnect. A lost probe or a
+    /// restarted vphoned is back within a second or two with the guest turned
+    /// as it was, and a window that forgot the orientation would turn upright
+    /// and back. A guest that restarts stays away longer and shows its boot
+    /// screen unturned.
+    private static let orientationHold: Duration = .seconds(5)
+    @ObservationIgnored private var orientationExpiry: Task<Void, Never>?
+
+    private func forgetOrientation() {
+        orientationExpiry?.cancel()
+        orientationExpiry = nil
+        interfaceOrientation = nil
+        deviceOrientation = nil
+    }
 
     /// Takes the interface and device orientation from a `display.orientation`
     /// reply. A null interface reading (SpringBoard not answering) leaves the
@@ -337,11 +352,22 @@ final class VPhoneGuestControl {
         orderedLocation = nil
         device = nil
         setDisconnected()
+        forgetOrientation()
     }
 
     private func probe() async {
         do {
-            let response = try await http(method: "GET", path: "/v1/health")
+            let response: VPhoneHTTPResponse
+            do {
+                response = try await http(method: "GET", path: "/v1/health")
+            } catch where isConnected {
+                // The vphoned of 2.16.0 and 2.16.1 refuses a connection whose
+                // request arrives while it checks its send buffer, about one
+                // in ten, until this probe has replaced it. Try once more
+                // before the guest counts as gone, which refuses every call
+                // until the next probe.
+                response = try await http(method: "GET", path: "/v1/health")
+            }
             guard response.status == 200,
                   let info = try JSONSerialization.jsonObject(with: response.body) as? [String: Any],
                   info["api_version"] as? Int == 1
@@ -381,6 +407,8 @@ final class VPhoneGuestControl {
             }
             if !isConnected {
                 isConnected = true
+                orientationExpiry?.cancel()
+                orientationExpiry = nil
                 print("[control] connected to vphoned HTTP API (iOS \(guestIOSVersion ?? "?"))")
                 onConnect?(guestCapabilities)
                 let instance = info["instance"] as? String
@@ -478,8 +506,12 @@ final class VPhoneGuestControl {
         guestIPAddress = nil
         onGuestIPAddressChange?(nil)
         guestIOSVersion = nil
-        interfaceOrientation = nil
-        deviceOrientation = nil
+        orientationExpiry?.cancel()
+        orientationExpiry = Task { [weak self] in
+            try? await Task.sleep(for: Self.orientationHold)
+            guard !Task.isCancelled, let self, !isConnected else { return }
+            forgetOrientation()
+        }
         foldAngle = nil
         foldPosition = nil
         foldSweepSeconds = 0
@@ -753,6 +785,8 @@ final class VPhoneGuestControl {
     /// enforces the executable and argument limits; this wrapper keeps the
     /// response typed enough for process discovery without hiding raw output.
     func spawnDiagnostic(executable: String, arguments: [String] = [], timeout: Double = 3) async throws -> [String: Any] {
+        // The names from before the renames, which every vphoned answers:
+        // a machine keeps its older vphoned until it is redeployed.
         try await call("process.spawn", params: [
             "executable": executable,
             "arguments": arguments,

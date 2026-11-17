@@ -621,17 +621,6 @@ struct VPhoneLaunchpadControlCommands {
         if let kernelcacheIPSW, !FileManager.default.isExecutableFile(atPath: kernelcacheIPSW) {
             throw VPhoneLaunchpadError("--ipsw names \(kernelcacheIPSW), which is not an executable.")
         }
-        // An iOS 18 guest's kernel-first mix is linked over ssh on the Mac
-        // --kmutil-ssh names; vphone-launchpad-cli passes the password from its
-        // own VPHONE_KMUTIL_SSH_PASSWORD, never as an argument.
-        let kernelcacheBuilder = request.option("kmutil-ssh").map {
-            VPhoneLaunchpadKernelcacheBuilder(destination: $0, password: request.option(VPhoneLaunchpadControlRequest.kmutilSSHPasswordOption))
-        }
-        if let kernelcacheBuilder {
-            guard VPhoneLaunchpadKernelcacheBuilder.isValid(kernelcacheBuilder.destination) else {
-                throw VPhoneLaunchpadError("--kmutil-ssh takes user@host, not \(kernelcacheBuilder.destination).")
-            }
-        }
         let options = try VPhoneLaunchpadCreationPipeline.Options(
             name: machine.name,
             libraryRoot: machine.libraryRoot,
@@ -649,7 +638,6 @@ struct VPhoneLaunchpadControlCommands {
             usesTemplate: usesTemplate,
             slimming: slimming,
             kernelcacheIPSW: kernelcacheIPSW,
-            kernelcacheBuilder: kernelcacheBuilder,
         )
         return library.create(options)
     }
@@ -719,8 +707,9 @@ struct VPhoneLaunchpadControlCommands {
     }
 
     /// The template switches, refused where `vphone-cli vm create` refuses
-    /// them: with `--no-template`, after `--slim off`, `--accounts-off`
-    /// without the trimmed profile, an app outside the removable list.
+    /// them: with `--no-template` (all but `--slim`), after `--slim off`,
+    /// `--accounts-off` without the trimmed profile, an app outside the
+    /// removable list.
     private static func slimming(_ request: VPhoneLaunchpadControlRequest, usesTemplate: Bool) throws -> VPhoneLaunchpadSlimming {
         func onOff(_ option: String) throws -> Bool? {
             guard let value = request.option(option) else {
@@ -733,8 +722,12 @@ struct VPhoneLaunchpadControlCommands {
             }
         }
         let parts = slimmingSwitches(request).filter { $0 != "slim" }
-        if !usesTemplate, !parts.isEmpty || request.option("slim") != nil {
-            throw VPhoneLaunchpadError("The slimming switches shape a template; --no-template creates the machine without one.")
+        // Without a template, --slim alone chooses, as New Machine's Slim
+        // System does, whether the machine gets a setup boot of its own (on,
+        // the default, which skips Setup Assistant) or starts at Setup
+        // Assistant (off).
+        if !usesTemplate, !parts.isEmpty {
+            throw VPhoneLaunchpadError("The slimming switches other than --slim shape a template; --no-template creates the machine without one.")
         }
         var slimming = VPhoneLaunchpadSlimming()
         slimming.slim = try onOff("slim") ?? true
@@ -1066,6 +1059,8 @@ struct VPhoneLaunchpadControlCommands {
             guard let seconds = Double(text), (1 ... 60).contains(seconds) else {
                 throw VPhoneLaunchpadError("--timeout takes 1 to 60 seconds.")
             }
+            // `timeout` for a vphoned from before `timeout_ms`; a newer one takes `timeout_ms`.
+            params["timeout_ms"] = seconds * 1000
             params["timeout"] = seconds
         }
         let object: [String: Any] = ["t": "rpc", "method": "screen.unlock", "params": params]

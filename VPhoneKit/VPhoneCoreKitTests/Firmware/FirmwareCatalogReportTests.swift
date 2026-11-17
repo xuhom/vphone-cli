@@ -178,6 +178,10 @@ struct FirmwareCatalogReportTests {
         #expect(pairing.iosURL == "https://updates.cdn-apple.com/2026SFallFCS/a595a3b2-2c42-470a-9417-a705aaafa05c/AudioAccessory5,1_27.0_24J361_Restore.ipsw")
         #expect(pairing.cloudosName == "cloudOS 26.4")
         #expect(pairing.cloudosURL == VPhoneFirmwareCatalog.cloud264)
+        // A research board cloudOS of the same version without a HomePod recipe
+        // (27.2) does not replace cloudOS 26.4.
+        #expect(pairings[2].cloudosURL == VPhoneFirmwareCatalog.cloud264)
+        #expect(pairings[0].cloudosName == "cloudOS 26.5 (23F75)")
         #expect(VPhoneGuestDevice.audioAccessory5_1.restoreBase == nil)
         #expect(VPhoneFirmwareCatalog.otaRelease(source: pairing.iosURL) == nil)
         #expect(VPhoneFirmwareCatalog.otaRelease(for: "AudioAccessory5,1", build: "24J361") == nil)
@@ -257,10 +261,22 @@ struct FirmwareCatalogReportTests {
         }
     }
 
+    @Test func `SE 3 iOS 18 uses the measured 26_1 GPU transport pairing`() throws {
+        let pairing = try #require(VPhoneFirmwareCatalog.pairings(for: "iPhone14,6").first { $0.iosName == "iOS 18.6.2" })
+        #expect(pairing.iosURL.hasSuffix("iPhone14,6_18.6.2_22G100_Restore.ipsw"))
+        #expect(pairing.cloudosURL == VPhoneFirmwareCatalog.cloud261)
+        #expect(VPhoneFirmwareCatalog.recommendedCloudOS(forDevice: "iPhone14,6", version: "18.6.2", url: pairing.iosURL).url == VPhoneFirmwareCatalog.cloud261)
+        #expect(VPhoneFirmwareCatalog.iOS18CloudOS(forVersion: "18.6.2")?.name == "cloudOS 18.6 (22G86)")
+        #expect(VPhoneFirmwareCatalog.recommendedCloudOS(forDevice: "iPhone17,3", version: "18.6.2", url: "").url == VPhoneFirmwareCatalog.cloud261)
+        let report = try #require(VPhoneFirmwareCatalog.report.devices.first { $0.productType == "iPhone14,6" })
+        #expect(report.pairings.first?.recommendedCloudOS.url == VPhoneFirmwareCatalog.cloud261)
+    }
+
     @Test func `other i phones have pairings of their own`() {
         for guest in VPhoneGuestDevice.known where guest.family == .iPhone && guest.presentsBoard && guest != .iPhone17_3 && guest != .iPhone11_6 && !Self.offCatalog.contains(guest) {
             let pairings = VPhoneFirmwareCatalog.pairings(for: guest.productType)
             let firstRelease = switch guest.productType {
+            case "iPhone14,6": "iOS 18.6.2"
             case "iPhone18,5": "iOS 26.3.1"
             case "iPhone19,2": "iOS 27.0.1"
             case "iPhone19,4": "iOS 27.1"
@@ -297,8 +313,8 @@ struct FirmwareCatalogReportTests {
         }
         #expect(VPhoneFirmwareCatalog.pairings(for: "iPhone11,4") == pairings)
         let devices = VPhoneFirmwareCatalog.report.devices
-        #expect(devices.first { $0.productType == "iPhone11,6" }?.kernelcacheLayout == "kernel-first")
-        #expect(devices.filter { $0.kernelcacheLayout != nil }.map(\.productType) == ["iPhone11,6"])
+        // The bundle links every mix itself: no device asks Launchpad for an ssh builder.
+        #expect(devices.allSatisfy { $0.kernelcacheLayout == nil })
     }
 
     @Test func `cellular i pad gets its wi fi model's pairings`() {

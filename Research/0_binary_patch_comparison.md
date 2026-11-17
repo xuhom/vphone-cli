@@ -1,5 +1,18 @@
 # Patch Comparison: Regular / Development / Jailbreak / Experimental
 
+> **xuhom upstream merge (2026-11-17).** Integrates upstream `a6784963`
+> and its 2.17.1 host products. Retains Duo display preparation before the
+> new observed RPC dispatch, native panel/sweep fields, Watch controls,
+> camera and LAN remote integration, and persisted window geometry/pinning.
+> Focused scrolling also accepts the upstream explicit mouse-capture mode.
+
+> **SE 3 iOS 18.6.2 pairing and driver extraction (2026-11-12).** The SE
+> catalog uses cloudOS 26.1 and the existing iOS 18.6 GPU transport. Fresh
+> preparation can take the 18.6 driver directly from the PCC OS image when
+> its AEA metadata supplies a valid embedded key, with read-only mounting
+> and platform validation. No GPU ABI rule or patch gate changed. See
+> [fresh creation, Metal readbacks and remaining limits](Guest/iphone_se3_ios18.md).
+
 > **xuhom upstream merge (2026-11-12).** Integrates upstream `6f57024a`
 > and versions both host products as 2.16.1. Keeps the Duo native-panel
 > routing and sweep observations in the new typed RPC declarations, alongside
@@ -726,6 +739,22 @@
 > actuator wait at once (a no-op on this guest — the wait loop is never
 > reached, because the manager's construction needs haptics hardware a
 > VM does not have). See the full section below.
+
+> **Standalone accessibility X1 coverage and audit (2026-11-13):**
+> The existing HomePop and debug-library patches do not cover the separate
+> `UIKitPopAccessibility` image. On iOS 27.1 `24A94425`, a development app
+> faulted in `+[AXUIKitPopGlue initialize]` on `pacibsppc`; crash handling then
+> preceded a scene watchdog. The guest system patch set now declares the other
+> 35 standalone X1 `.axbundle` images in this userland, including UIKit and
+> SwiftUI, and uses complete, reversible lowering with the existing installer.
+> Ordinary and missing images remain unchanged; unvalidated OS presets stay
+> excluded. Native signing, repeat conversion, backups and app startup with
+> accessibility enabled were checked. The read-only `cfw audit-arm64e-x1`
+> command discovers native and universal images independently of their names;
+> `--strict` rejects remaining instructions, incomplete plans and scan errors.
+> The same firmware still has 1,012 unlisted images with complete plans and
+> seven incomplete images. See the [coverage study](Guest/accessibility_library_x1.md)
+> and [complete remaining inventory](Guest/standalone_x1_remaining_24A94425.md).
 
 > **CIBarcode standalone X1 lowering (2026-10-29, local validation):**
 > `system-cibarcode-cfw-arm64e_x1` applies the existing static X1 planner to
@@ -1878,6 +1907,10 @@ Apple's ROM and this patch. See `Firmware/openavb_boot_rom.md`.
 | 15  | CMS-less installer research tolerance             | Redirect only the absent CMS wrapper branch to the existing path-dependent fallback; retain SuperBlob validation, present-CMS failures and the second policy restriction | - | Y | Y |
 | 16  | Temporary ordinary-library Team-ID tolerance      | Skip only absent/mismatched Team-ID comparison for framework/dylib types 3–5; retain signature admission, category ordering, context/role and mapping checks | - | Y | Y |
 | 17  | Missing-profile compatibility with AMFI bypass    | Waive only the type-4 null-profile error when AMFI trust-cache bypass skips association; retain type 4 and checks of present profiles | - | Y | Y |
+| 18  | Pre-check admission: `mov w8, #0xa`               | Selector-24 pre-check walk body: tolerated validation-type byte | - | opt | opt |
+| 19  | Pre-check admission: `strb w8, [x19]`             | Write type 10 to the walk's out parameter | - | opt | opt |
+| 20  | Pre-check admission: `mov w0, #0x90`              | Return the walk's PASS status before classification | - | opt | opt |
+| 21  | Pre-check admission: `b <epilogue>`               | Skip the policy table walk | - | opt | opt |
 
 > **Executable remapping:** rows 13–17 form `txm-cfw-executable_remap`, selected
 > by standard without an iOS/cloudOS version gate. Unique semantic matches in
@@ -1891,8 +1924,9 @@ Apple's ROM and this patch. See `Firmware/openavb_boot_rom.md`.
 > Runtime reports on iOS 26.6.2 and iOS 27.1 each execute 28/28 main/framework
 > original-code remaps with actual RX mappings; the tester also reports normal
 > startup and App loading with the replacement. The iOS 27 forced type-10 pre-check
-> patch is removed; native pre-check code is unchanged, and iOS 26/27 produce
-> identical output from the pinned TXM. Host tests reproduce and resolve the historical
+> patch is not part of standard; native pre-check code is unchanged, and iOS 26/27 produce
+> identical output from the pinned TXM. It is available again as the selectable
+> rows 18–21 (see below). Host tests reproduce and resolve the historical
 > `0x12491`/`0x32202` admission failures using this patch; the retained CMS
 > restriction can still reject. Other OS pairs and policy contexts remain unverified.
 > Native association and final-validation code is
@@ -1902,12 +1936,56 @@ Apple's ROM and this patch. See `Firmware/openavb_boot_rom.md`.
 > not full stock-policy alignment. See [TXM executable remap](Firmware/txm_executable_remap.md)
 > for discovery, exact changes, regression tests, evidence and remaining limits.
 
-> **Former pre-check admission:** `txm-boot-precheck_admission` bypassed the
-> selector-24 policy walk and fixed an iOS 27.0.1 first-boot init SIGKILL, but
-> forced all admitted signatures to type 10. It is replaced by native
-> classification above. The replacement has iOS 27.1 remap results and
-> tester-reported startup success; the historical 27.0.1 pairing has not been
-> retested. Historical evidence: `Research/Firmware/txm_selector24_cms_gate.md`.
+> **Pre-check admission (selectable, rows 18–21):** `txm-exp-precheck_admission`
+> restores the force-admit that #831 removed as `txm-boot-precheck_admission`.
+> It rewrites the selector-24 pre-check walk (anchor: the only `mov x17, #0x7e51`
+> + `blraa` after a post-indexed `ldr x22, [x20], #0x40` table walk) so the walk
+> writes type 10 and returns PASS before ad-hoc, CMS and fallback classification
+> run. iOS 27 only, off by default (`opt`: blocked in every shipped preset and in
+> the catalog's manual-only set). Select it when the guest injects CS_ADHOC code:
+> `--allow txm-exp-precheck_admission`. It supersedes rows 13–17 — the patcher
+> skips `txm-cfw-executable_remap` when precheck is on (they are mutually
+> exclusive) and runs the base trust-cache bypass instead — so `--block
+> txm-cfw-executable_remap` is optional.
+>
+> Why it is needed: with rows 13–17, a CS_ADHOC dylib injected into one of
+> Apple's ad-hoc apps never reaches RX. ellekit/roothide inject `roothideinit.dylib`,
+> itself CS_ADHOC (CodeDirectory flags `0x2`), so Settings and other system apps
+> SIGKILL at launch with `CODESIGNING / Invalid Page` in its initializer, and with
+> injection live the UI crash-loops. Injection into SpringBoard can still work, so
+> the native decision depends on the host process, not only on the injected image.
+> Reclassifying ad-hoc images at the classifier is not a substitute: the
+> classifier runs for every image, injected dylibs included.
+>
+> Evidence (2026-11-13): iPad16,1 / iOS 27.0.1 / cloudOS 26.4, created by a full
+> `vm create` restore with the flags above (receipt TXM section lists
+> `txm-exp-precheck_admission`, no `txm-cfw-executable_remap`, writer `restore`),
+> then roothide + ellekit. Settings and seven other ad-hoc apps load
+> `TweakLoader → libinjector → roothideinit` and stay up with no injection crash.
+> A test tweak's `MSHookFunction` on the shared-cache `access` installs and fires
+> inside Settings without a crash, so inline hooks keep working. But an app
+> `vm_remap`-ing its own main `__TEXT` (what rows 13–17 were validated on) is
+> **lost**: the remap's target reads `R--` under precheck, reproducing #831's
+> evidence, and this holds even when both patch groups are enabled — precheck
+> force-passes the walk as type 10, and type 10's mapping restriction denies the
+> self-remap independently of the legacy-bypass cause rows 13–17 fix. So the two
+> are a genuine either/or (injection XOR self-remap); the patcher enforces this
+> by skipping rows 13–17 when precheck is selected, so enabling both is precheck
+> alone, not a dormant mix. iOS 26 is out of scope (rows 18–21 are iOS-27 gated). The
+> standard default stays rows 13–17; flipping it trades the injection regression
+> for a self-remap regression and is a policy choice. Historical evidence: `Research/Firmware/txm_selector24_cms_gate.md`.
+>
+> Test only on a freshly restored machine: `cfw install` and environment updates
+> never rewrite the booted TXM (`fw set-patches`: "LLB, TXM, DeviceTree: only a
+> restore"), so an in-place `fw patch` + `cfw install` keeps the old TXM.
+
+### SPTM
+
+| #   | Patch                                             | Purpose                                   | Regular | Dev | JB  |
+| --- | ------------------------------------------------- | ----------------------------------------- | :-----: | :-: | :-: |
+| 1   | `sptm-boot-secondary_cpu_throttle_tunable` (cloudOS 18 only) | `b.eq` -> `nop` in the secondary CPU reset path: skip the core throttle tunable no vCPU has | Y | Y | Y |
+
+See "SPTM's secondary CPU tunable stops a multi-vCPU cloudOS 18 guest" below.
 
 ## Kernelcache
 
@@ -2040,6 +2118,7 @@ do NOT execute these).
 | 37  | No Apple binary change: SystemHook detours IOKit's `IOServiceOpen`/`IOServiceClose`/`IOConnectCallMethod`/`IOConnectCallAsyncMethod` while `/usr/lib/vphone-ios18-gpu` exists, and `fw prepare` stages the iOS release's own cloudOS GPU driver — **iOS 18.6 / cloudOS 26.1** | none (`VPhoneGuestComponents/SystemHook/VPhoneIOS18GPU.c`; driver from cloudOS 18.6; marker written by `cfw install` only over that driver) | **An iOS 18 guest gets a Metal device.** The 26.1 driver does not load on iOS 18, and the 18.6 one is refused by the 26.1 kernel: IOGPU device method 6 is gone and 7–255 moved down by one, the resource-create reply gained 8 bytes at 0x18, the multi-buffer submit takes 0x30-byte entries instead of 0x28 and returns a scalar iOS 18 does not ask for, and AppleParavirtGPU method 265 grew from 0x10c to 0x118. The transport renumbers and repacks for IOGPU device connections only. `system-systemhook-cfw-ios18_gpu_transport`; see "iOS 18 GPU transport (2026-11-05)" and `Research/Guest/ios18_gpu_transport.md` |    Y    |  Y  |  Y  |
 | 38  | `tbz` -> `nop` on the cached Neural Engine existence answer in `___deviceHasModernNeuralEngine_block_invoke`, plus the host's MIL sources for the five E5 models — **iOS 27** | TextRecognition, guest dyld shared cache; `/System/Library/PrivateFrameworks/TextRecognition.framework/cr_*_e5.mlmodelc.bundle` | **Accurate text recognition.** A VM is never given a modern Neural Engine, so TextRecognition picks CPU models whose weights the iPhone firmware does not ship. `dyld-cfw-text_recognition_ane` selects the E5 models instead and adds the `model.mil` and weights E5RT compiles them from on the paravirtual Neural Engine; local-symbol and call-target discovery, page re-attestation, undo-log revert and a journal of the added files. See "Accurate text recognition on the paravirtual Neural Engine". |    Y    |  Y  |  Y  |
 | 39  | Preserve GLES signed clip depth — **binary capability; validated iOS 26.6 / 27.1 with cloudOS 26.4** | AppleMetalGLRenderer and the GPU compiler plugin | **Keep legal negative-z geometry and correct depth rejection.** `dyld-cfw-gles_depth_clip` pairs `(z+w)/2` vertex conversion with `near=2*midpoint-far` viewport correction. Discover both setter and update data flow before writing. New unsupported pairs skip both halves; installed pairs remain coherent. Native Metal is unchanged. See the reveal procedure below and `Guest/gles_depth_clip.md`. |    Y    |  Y  |  Y  |
+| 40  | `tbnz` -> `nop` on the rotated-framebuffer branch in `CA::OGL::MetalContext::get_surface` (`ldrb wN,[surface,#0x110]; tbnz wN,#2` after `bl _CADeviceUseFramebufferCompression`; `0x184463b54` on iPad16,1 24A446) — **iOS 27** | QuartzCore, guest dyld shared cache | **iPad pointer visible in landscape.** Without framebuffer compression, which the paravirtual GPU does not report, CA creates a landscape framebuffer texture with `setRotation:3`; real iPads always render panel-native. In that rotated texture the paravirtual GPU drops shape-layer coverage from layers that do not rotate with the interface, so pointeruid's shape-masked arrow, hosted in SpringBoard's portrait-fixed pointer windows, never reaches the host view. `dyld-cfw-quartzcore_unrotated_framebuffer` takes the compression path instead; the display orientation (backboardd hit testing) is unchanged. Local-symbol discovery, branch target verified as the landscape orientation test, one site, page re-attestation, undo-log revert. Validated live by the same nop in the running backboardd; see `Guest/ipad_pointer_landscape_scanout.md`. |    Y    |  Y  |  Y  |
 
 ### Swift port status — the eight DSC patchers (2026-09-23)
 
@@ -4964,10 +5043,10 @@ it finds the recipe in `Contents/Resources/kernelcache_recipes` by SHA-256, then
    recipe's maps;
 2. keeps the recipe's bundle list: the base without its research-board-only
    kexts, plus the donor kexts that link against the base kernel;
-3. stages the bundles as a root-owned volume (kmutil reads no other kexts and
-   takes the host's own in their place without a word) and links it with
-   `kmutil create -a arm64e -n boot -s all -z -x --compress --img4-encode
-   --split-ro-rx-tags`;
+3. stages the bundles as a volume and links it with `kmutil create -a arm64e
+   -n boot -s all -z -x --compress --img4-encode --split-ro-rx-tags`, run by
+   the kmutil release Apple built the base with (below, "The kmutil of the
+   base's own release");
 4. puts back Apple's CPU subtype if the builder wrote another, makes calls
    through the auth stubs the macOS 27 builder keeps direct again
    (`KernelCollectionStubCalls`, below), and checks that every requested bundle
@@ -4980,24 +5059,21 @@ the new layout) and saves the preset's kernel patches into it
 in `FirmwareOriginals`. Mixes are cached in `~/.vphone/kernelcache/mix`, keyed
 by the kernelcaches, the maps and bundle list and the builder layout.
 
-Only the link needs root; native extraction runs as the invoking user. `fw kernelcache <vm>` stages
-the mix as the user (both extractions and the volume) and links it under sudo:
-root copies the staged volume into a fresh root-only directory, walking it by
-descriptor, refusing every symbolic link but the KDK's pointer to the volume's
-extensions and normalising modes (kmutil skips a kext with a group- or
-world-writable file as silently as one root does not own), and runs kmutil on
-the copy. The Launchpad helper's link runs with `--link-only`, which never
-stages. kmutil records the absolute path of every codeless kext, which moves
-the end of `__PRELINK_INFO`: the volume path takes the length of the build root
-Apple linked the base in, read from the base's own prelink info, so a mix no
-longer depends on where it is built. The 26.6 mix then has the segment layout
-of the hand-built research mix that booted.
+Nothing needs root. `fw kernelcache <vm>` stages the mix (both extractions and
+the volume) and links it as the user; `fw patch` builds it the same way when
+it runs as the user, and as root (the Minimal preset's patch through the
+Launchpad helper) only reads it from the cache, so root never runs the
+user's toolchain. kmutil records the absolute path of every codeless kext,
+which moves the end of `__PRELINK_INFO`: the volume is linked from a clone in
+`/private/var/tmp` whose path takes the length of the build root Apple linked
+the base in, read from the base's own prelink info, so a mix does not depend
+on where it is built. The 26.6 mix then has the segment layout of the
+hand-built research mix that booted.
 
-Requirements: root for linking; and for every base here (26.4–26.7, all
-`kernel-last`) the kmutil of macOS 26.4 or later. `fw prepare` now pairs a
-cloudOS without vphone600ap and refuses one whose kernelcache no recipe covers.
-`cfw update-kernel` refuses on a mixed kernel, whose originals are the research
-board's.
+`fw prepare` pairs a cloudOS without vphone600ap and refuses one whose
+kernelcache no recipe covers; `vm create` also refuses, before its restores,
+a base whose kmutil version no known macOS release ships. `cfw update-kernel` refuses on a mixed kernel, whose originals are the
+research board's.
 
 Native extraction checked on 2026-10-23: all 264 fileset images of the 26.4
 beta vphone600 and vresearch101 collections match the pinned reference in
@@ -5280,14 +5356,92 @@ AppleARMIISAudio needs); 18.1 to 18.3.1 take 15, without those three: 18.1
 lacks the tightbeam API they import, and its addresses in 18.2.1 and 18.3.1
 are not mapped reliably.
 
-The 18.x kernels are kernel-first. On macOS 26.4 and later the mix is linked
-on another Mac or macOS VM with an older kmutil over ssh (`VPHONE_KMUTIL_SSH`,
-`RemoteKernelCollectionBuilder`): the staged volume goes into a fresh
-directory of the remote `/private/var/tmp`, at a path as long as the base's
-build root, root links it there, and the result comes back. Linked with the
+The 18.x kernels are kernel-first. They were first linked on another Mac or
+macOS VM with an older kmutil over ssh (`VPHONE_KMUTIL_SSH`, since removed);
+now the kmutil of macOS 15 links them on any macOS (below). Linked with the
 kmutil of macOS 15.6.1, the 18.7.2 mix differs from the research build that
 booted only in the 15 rebound pointers and the symbol sets that build had
 extended.
+
+### The kmutil of the base's own release
+
+A mix links in the base's layout only with the kernel collection builder
+Apple linked the base with: macOS 15 and 26.0–26.3 put `__TEXT_EXEC` of the
+kernel first, 26.4 and later last, 27 keeps the auth stubs, and the version
+in between can move other things. kmutil itself only gathers the inputs and
+stamps its version (and a hash and UUID of it) into `__PRELINK_INFO`; the
+layout is `libKernelCollectionBuilder.dylib` (dyld's AppCacheBuilder), which
+exists only inside the dyld shared cache. Every kernelcache names its
+builder in `_PrelinkKCID`, and the version is the one the macOS release of
+the time ships as `KernelManagement_executables-<version>`:
+
+| `_PrelinkKCID` | Bases | macOS whose recovery kmutil reports it |
+| --- | --- | --- |
+| `KernelManagement_host-463.40.2` | 18.1, 18.2.1, 18.3.1 | 15.1 (24B83) |
+| `KernelManagement_host-463.100.7` | 18.5, 18.6, 18.7, 18.7.2 | 15.6.1 (24G90) |
+| `KernelManagement_host-487.100.11` | 26.4, 26.5, 26.6, 26.7, watch 26.4 | 26.5 (25F71) |
+| `KernelManagement_host-514.40.8` | 27.2 | 27.2.1 (26B131) |
+
+`KernelCollectionToolchain` uses this Mac's `/usr/bin/kmutil` when it is the
+version (thinned to its arm64e slice: macOS 27's is also arm64e.x1), else
+reads the release's recoveryOS (`BaseSystem` in its BuildManifest, about
+0.9–1.1 GB) out of the IPSW with parallel range requests, decrypts it
+(`VPhoneAEA`, `/usr/bin/aea`), mounts it read-only and takes `/usr/bin/kmutil`,
+the arm64e dyld shared cache and KernelManagement's configuration. The
+recovery kmutil is the binary of the full OS (its hash is in the static trust
+cache). Then:
+
+- **The builder as a dylib** (`DyldCacheDylibExtractor`): the image is copied
+  out of the cache keeping each segment's address modulo 4 KiB, so only ADRP
+  page deltas change; every slide-info (v5) pointer becomes an
+  `DYLD_CHAINED_PTR_ARM64E` fixup with its key, address diversity and
+  discriminator (a rebase, or a bind to the symbol a dependent exports there,
+  re-exports followed); branches into other images or the cache's stub
+  islands go to new auth stubs, and ADRP+LDR/ADD pairs into the cache's
+  coalesced GOTs to new GOT slots. The cache drops split-seg info, so an
+  ADRP's users are found by a forward scan of its block; an access the scan
+  misses would stay pointing into the cache, and none is left in the four
+  builders above (an ADRP whose uses are partly outside the image, or whose
+  target is outside without a use, is refused). The macOS 15 builders also
+  carry `__unwind_info`: its one personality names a coalesced GOT slot and
+  gets its own; their LSDAs only catch everything (`catch (...)`), which needs
+  no type table, and an LSDA that catches a type is refused. `__LINKEDIT` is
+  rebuilt (exports, symbols with the locals the cache keeps, indirect symbols,
+  function starts), and the result is signed ad hoc. dyld loads it from
+  `DYLD_LIBRARY_PATH` in place of the cached copy (`dylib-from-disk-to-override-cache`).
+- **The configuration**: macOS 26 renamed `PlatformDriverExtensionsDirectory`
+  to `PlatformDriverExtensionsDirectories` in
+  `KernelManagement.framework/Resources/com.apple.kernelmanagement.plist`,
+  and macOS 15's kmutil traps on the new file ("Configuration has unrecognized
+  format"). `libvphone-kmutil-shim.dylib` opens its own release's copy in its place.
+- **No root**: kmutil skips kexts root does not own, or with group- or
+  world-writable files, without a word, even for `kmutil find`. The shim,
+  inserted into the ad hoc signed kmutil (the system one ignores `DYLD_`
+  variables), reports the invoking user's files as `root:wheel` without those
+  write bits.
+
+The toolchain is checked with `kmutil create --help` before it is kept in
+`~/.vphone/kernelcache/kmutil/<version>`. Checked on 2026-11-13 on macOS 27.2.1:
+
+- the extractor gives the same bytes as the prototype it was ported from for
+  the 26.5 and 27.2 builders; with them, the kmutil of macOS 26.5 links a
+  145-kext oracle volume byte for byte as the system kmutil of a macOS 26.5
+  Mac had (kmutil's version string included), and the kmutil of 27.2 links
+  the same volume as this Mac's system kmutil does; the 26.5 kmutil with the
+  27.2 builder gives the 27.2 output instead, so the builder decides the layout;
+- the macOS 15.6.1 kmutil links the staged 18.6 mix, unprivileged, in about
+  2 seconds, to the mix a macOS 15 Mac of the same kmutil version (463.100.7)
+  had linked over ssh, except the volume's path (another directory of the same
+  length) and the unique identifiers and UUID kmutil derives from it.
+- `fw kernelcache --kernelcache <file>` (no VM), from an empty cache: 18.6
+  (15.6.1's recoveryOS fetched, 848 MB, 3 min 44 s in all), 26.6 (26.5's), 18.1
+  (15.1's) and 27.2 (this Mac's kmutil) all mix. The 18.1 mix linked by
+  463.40.2, the version Apple used, differs from the 463.100.7 link that booted
+  only in `__PRELINK_INFO` (the version string and what it shifts); every code
+  segment is the same.
+- 27.2 kexts call `strcmp` in the kernel's `__bootcode` through their auth stubs,
+  so `KernelCollectionStubCalls` takes a stub target in `__TEXT_BOOT_EXEC` as
+  well as `__TEXT_EXEC`; it refused the 27.2 mix before.
 
 ### The iPhone XS Max guest
 
@@ -5419,7 +5573,7 @@ a 26.x kernel (18.6.2 on cloudOS 26.1) does match the second one, wrongly; see
 | `kernel-exp-frida_thread_set_state_entitlement_flag`, `kernel-exp-frida_syscall_filter_off` | cloudOS ≥ 26.4 | also cloudOS 18.x (same shapes, 18.6 `0xA606E0`/`0xA608E8`; `0xA0FB18`, `0xA0FBA8`, `0x113FB54`). TPRO and the immutable-code patch have no 18.x shape and stay ≥ 26.4 |
 
 `kernel-boot-vm_map_protect` finds no gate on 18.x, as on 26.5 and later.
-The former `txm-boot-precheck_admission` (the 27.0.1 fix) and `ibec-boot-bootx_precondition`
+`txm-exp-precheck_admission` (formerly `txm-boot-precheck_admission`, the 27.0.1 fix) and `ibec-boot-bootx_precondition`
 have no 18.x site and are not needed there.
 The four VirtualAudio throw patches (`speaker_route_throws`, `mute_set_throw`,
 `speaker_protection_gate`, `volume_mode_precondition`) look for code iOS 18.6's
@@ -6682,6 +6836,18 @@ Selection restores SpringBoard and removes the library on opt-out; a restart
 restores native methods.
 No native iOS 17 kernel, Metal driver, camera or networking support is claimed.
 
+The SE 3 and iPhone 15 17.7 guests use the cloudOS 18.6 GPU driver with the
+existing `system-systemhook-cfw-ios18_gpu_transport` selection. The driver
+weak-loads SystemHook before Metal registers the device. SystemHook translates
+the 17.7 single-buffer submission and 40-byte kernel completion entries for
+the 32-byte IOGPU reader. See the iOS 17.7 GPU rendering section of
+`Research/Guest/ios17_bringup.md` for the runtime checks and remaining limits.
+
+`system-wallpaper-cfw-ios17_image_assets` addresses the stock iOS 17
+wallpaper's HEIC decode failure. It creates PNG copies of the images referenced
+by wallpaper `7565` and updates their CAML references on a private disk clone.
+The patch backs up the original CAML documents and restores them on deselection.
+
 ## OpenGL ES in guests (2026-11-02)
 
 Upstream issue Lakr233/vphone-cli#793: every `-[EAGLContext initWithAPI:]`
@@ -7317,6 +7483,20 @@ removes the store at startup when it was created before the marker, then stops
 iconservicesagent; the Data volume is out of the host's reach. No Apple binary
 change.
 
+**Safari (2026-11-13).** An iPhone SE 3 on iOS 18.6.2 (22G100) and cloudOS
+26.1 (23B85) still showed black page content with the iOS 18 GPU transport
+installed. The accessibility tree exposed the page and text written by
+JavaScript. Disabling GPU-process DOM rendering exposed the page background
+but no text. Disabling GraphicsLayer accelerated drawing restored text.
+Disabling GPU-process canvas rendering restored the blue rectangle drawn by
+the test page's 2D canvas.
+
+`system-systemhook-cfw-ios18_safari_software_rendering` is selected by
+`standard` for the iOS 18.6 / cloudOS 26.1 pairing. Its system-volume marker
+lets SystemHook supply the two overrides in MobileSafari's volatile argument
+domain at startup. Blocking the patch removes the marker on the next CFW
+environment update. See the [Safari validation in the transport notes](Guest/ios18_gpu_transport.md#safari).
+
 ## Re-sealing through the shared CodeResources (2026-11-05)
 
 No new patch identifier and no new bytes in an Apple binary. Every installer
@@ -7345,6 +7525,8 @@ step.
 `system-remotepairingdeviced-cfw-local_connections` permits pairing control and
 tunnel connections originating on the device itself, so apps inside the guest
 can connect. It is enabled in `standard` and is not boot-essential.
+The declaration covers iOS 17, 18, 26 and 27; the guest installer follows
+that declaration when applying or reverting the patch.
 
 On 24A446 and 24C5037i, the daemon's local-path predicate calls
 `nw_connection_copy_current_path`, `nw_path_is_local`, and
@@ -7359,9 +7541,34 @@ references and branches identify its three callers. Replacing those callers'
 `bl <local-path predicate>` with `mov w0, #0` bypasses the local-connection
 rejections.
 
-Offline validation on 24A446 and 24C5037i changes exactly 12 bytes before
-signing, and a second application is a no-op. Other builds have not been
-tested and may need different matching.
+On iOS 18.6.2 (22G100) and 26.6.2 (23G90), the predicate and its three
+callers have the same shape. On iOS 17.7 (21H16), the same predicate has
+four callers: a control callback and three tunnel callbacks. That build
+uses `adr` for its rejection messages, tests the control result directly
+with `tbz w0`, and loads each tunnel's local-connection override with a
+direct `ldrb` rather than a runtime field offset. The matcher accepts both
+layouts and still requires every caller to correspond to a rejection
+message and its branch. An unknown caller or ambiguous gate is refused
+before the file is written.
+
+Offline validation on 2026-11-12 used the CLI against the original Apple
+binaries from 21H16, 22G100, 23G90, 24A446, 24B5110a and 24C5037i. The 17.7
+image changes 16 bytes at four sites; the other five change 12 bytes at
+three sites. All changes are confined to the reported call instructions.
+Dry runs and repeated application leave the input unchanged; partially
+applied inputs converge to the same output. Corrupting a rejection message
+or a gate instruction causes failure without writing the input. Other
+builds may need different matching.
+
+Live validation on 22G100 used iPhone17,3 userland over cloudOS 26.1
+(23B85), with a 2.16.1 bundle containing this change. Without the patch,
+same-device control connections were reset and the daemon logged its local
+machine rejection. After `cfw update-environment`, the three installed
+instructions were `mov w0, #0`; pairing verification, TLS, CDTunnel and RSD
+discovery succeeded. Turning the patch off restored all three original
+calls from the backup. The guest's Personalized DDI failed to mount at
+`/System/Developer`, so this run does not establish Accessibility or screen
+capture through CoreDevice.
 
 The iPhone19,4 builds of 27.1 (24A94425) and 27.2 (24B91020) are `arm64e.x1`:
 their functions open with `pacibsppc`, so function bounds also accept the
@@ -7621,6 +7828,103 @@ In environment 6 AMFI enables Developer Mode only in its research build; the
 research-board kernel mix takes AMFI from the release kernel, so a research-board
 guest has none (the note has the disassembly).
 
-iOS 27 does not boot in environment 6: dyld cannot mount the OS cryptex and
-launchd panics on libSystem (27.0.1 with cloudOS 26.4, 2026-11-12). `fw prepare`
-and the patcher refuse the box for iOS 27 and later (`trustedDarwinOSRefusal`).
+iOS 27.0.1 with cloudOS 26.4 panicked in environment 6 (dyld mounted no OS
+cryptex, launchd found no libSystem; 2026-11-12), and the box was refused for
+iOS 27 and later. That pairing boots a 26.4 TXM under iOS 27 binaries, which
+only `standard`'s TXM patches make work and `minimal` leaves stock. iOS 27.2
+with cloudOS 27.2 boots in environment 6 with cryptexes (2026-11-13), so the
+refusal is gone; the note has the versions checked.
+
+## SPTM's secondary CPU tunable stops a multi-vCPU cloudOS 18 guest (2026-11-12)
+
+A cloudOS 18 guest with more than one vCPU stops the whole virtual machine on
+macOS 27.2.1 (26B131, Virtualization.framework 308.2.7): "The virtual machine
+stopped unexpectedly", once the kernel starts its second CPU. It happens in
+the DFU restore and in a normal boot, with 2, 4 and 8 vCPUs; one vCPU boots.
+Issue #901 is the same stop in the temporary cloudOS restore `fw prepare` runs
+for the GPU driver, which has used one vCPU since.
+
+### Cause
+
+`com.apple.Virtualization.VirtualMachine` traps (`EXC_BREAKPOINT`, `brk 1`) on
+a `com.apple.virtualization.thread.cpu-N` thread, N > 0, after logging
+"Unhandled exception code 0x%x". Read with lldb on that thread at the log call
+(iPhone11,6 18.5 22F76 on cloudOS 18.5 22F76, two vCPUs):
+
+| Register | Value | Meaning |
+| --- | --- | --- |
+| exit syndrome | `0x82000007` | EC `0x20`, instruction abort from a lower EL, translation fault |
+| guest PC | `0x200` | the synchronous exception vector of a `VBAR_EL1` of 0 |
+| `VBAR_EL1` | `0` | not set yet |
+| `SCTLR_EL1` | `0x30800180` | MMU off |
+| `ELR_EL1` | `0x749b7494` | the instruction that faulted first |
+| `ESR_EL1` | `0x97c48010` | EC `0x25`, data abort at the same EL, synchronous external abort, 64-bit read into `x4` |
+| `FAR_EL1` | `0x218` | |
+| `x2`, `x3`, `x6` | `0`, `0x218`, `0x610f0000` | base, offset, `MIDR_EL1` |
+
+`ELR_EL1` is `0xfffffff027083494` in `sptm.vresearch1.release` (page offset
+`0x3494`, and `x1` is in its `__DATA`), in the path a CPU other than the boot
+CPU enters at reset:
+
+```
+fffffff027083414  mrs  x15, MPIDR_EL1        ; find this CPU's data, x1
+...
+fffffff02708346c  mrs  x6, MIDR_EL1
+fffffff027083470  and  x2, x6, #0xfff0       ; part number
+fffffff027083474  cmp  x2, #0
+fffffff027083478  b.eq 0xfffffff027083480    ; <- patched to nop
+fffffff02708347c  b    0xfffffff0270834ac
+fffffff027083480  ldr  x2, [x1, #0xc90]
+fffffff027083484  movk x3, #0, lsl #48 ... movk x3, #0x218
+fffffff027083494  ldr  x4, [x2, x3]          ; faults
+fffffff027083498  and  x4, x4, #0xffffffffffffff
+fffffff02708349c  mov  x5, #0xb2
+fffffff0270834a0  lsl  x5, x5, #56
+fffffff0270834a4  orr  x4, x4, x5
+fffffff0270834a8  str  x4, [x2, x3]
+fffffff0270834ac  adrp x20, ...              ; then msr VBAR_EL1, x0
+```
+
+Offset `0x218` with the top byte as the field is XNU's `CORE_THRTL_CFG2`
+(`CORE_THRTL_CFG2_OFFSET`, `c1pptThrtlRate` at bit 56,
+`pexpert/pexpert/arm64/apple_arm64_regs.h`): a core throttle tunable applied
+through the CPU's implementation-defined register block. The SPTM build takes
+the block for a `MIDR_EL1` part number of 0, which is what a
+Virtualization.framework vCPU reports (`0x610f0000`), and the register base in
+the CPU's data is 0 on a VM. No store with that displacement exists in the
+image. The read of physical `0x218` gets an external abort, the CPU vectors
+to `0x200` with no vector table, and Virtualization.framework has no handler
+for the instruction abort that follows. The boot CPU never takes this path.
+
+cloudOS 26.1's SPTM (23B78) reads `MIDR_EL1` once in its reset path, after it
+has set `VBAR_EL1`, and has no such block.
+
+### Patch
+
+`sptm-boot-secondary_cpu_throttle_tunable` (`SPTMSecondaryCPUPatcher`), in the
+boot chain set, gated to cloudOS 18 and boot-essential: the `b.eq` becomes a
+`nop`, so every CPU takes the `b` that skips the tunable. `minimal` and
+`watchos` select it, as they do iBEC's and LLB's patches. SPTM is a firmware
+component of its own (`VPhoneFirmwareComponent.sptm`), delivered by the
+restore; on any other cloudOS no SPTM component is built.
+
+Reveal procedure, all on decoded operands in `__TEXT_EXEC,__text`:
+
+1. `mrs <r>, MIDR_EL1`, then `and <t>, <r>, #0xfff0`, then `cmp <t>, #0`.
+2. `b.eq` whose target is the instruction after the `b` that follows it.
+3. Between that target and the `b`'s target, an `ldr` and a `str` through the
+   same base and index registers.
+
+Exactly one site must match; none means an SPTM without the tunable or one
+patched before, and nothing is written.
+
+Validation: `SPTMSecondaryCPUTests`, then an 18.x guest restored with the
+patch and booted with more than one vCPU. Checked 2026-11-12 on macOS 27.2.1:
+iPhone11,6 18.5 (22F76) on cloudOS 18.5, `minimal`, four vCPUs, restored and
+booted to vphoned, all four vCPU threads running; before the patch the same
+machine stopped with 2, 4 and 8. An SPTM rebuilt without its `PAYP` segment
+properties (`kcrf`, `kcwf`, `kcxf` and their sizes) makes iBoot panic before it
+starts the kernel, so `IM4PHandler` keeps them. Not known: whether a host before
+macOS 27.2 stops the same way. cloudOS 18.5 (22F76) and 18.6 (22G86) each
+match one site, 26.1 (23B85) and 26.4 (23E5207q) none; the other 18.x SPTMs
+were not read.

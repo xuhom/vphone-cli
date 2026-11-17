@@ -20,6 +20,8 @@ static int vpInXPCProxy;
 static int vpInBootstrap;
 extern void vpInstallSurfaceAdapter(void);
 extern void vpInstallIOS18GPUTransport(void);
+extern void vpUseIOS18SafariSoftwareRendering(void);
+extern bool vpUsesIOS17GPUTransport(void);
 
 static int vpIsBootstrapPath(const char *path, const char *root) {
     if (path && strncmp(path, "/var/jb/", 8) == 0)
@@ -51,6 +53,14 @@ static int vpIsMotionDaemon(const char *path) {
 // Hinge/VPhoneHingeRelayResend.h.
 static int vpIsLocationd(const char *path) {
     return vpPathHasSuffix(path, "/usr/libexec/locationd");
+}
+
+// WebKit runs camera capture for every web page in its GPU process, an XPC
+// service outside any .app, so the app gate below never gives it the camera
+// fix: its AVCaptureSession hit the virtual camera's nil active format and
+// aborted (issue #676).
+static int vpIsWebKitGPUProcess(const char *path) {
+    return vpPathHasSuffix(path, "/com.apple.WebKit.GPU");
 }
 
 static int vpIsInjectionTarget(const char *path) {
@@ -230,6 +240,11 @@ static void vpLoadLibrary(const char *kind, const char *library) {
 
 // xpcproxy needs this bridge because launchd only spawns the proxy, not its target.
 __attribute__((constructor)) static void vpLogProcess(void) {
+    // The iOS 17 driver can load SystemHook while Metal is registering devices.
+    if (vpUsesIOS17GPUTransport()) {
+        vpInstallIOS18GPUTransport();
+        return;
+    }
     vpInstallSurfaceAdapter();
     vpInstallIOS18GPUTransport();
     // Request cross-boot reuse at constructor entry: libCoreFSCache normally
@@ -266,6 +281,9 @@ __attribute__((constructor)) static void vpLogProcess(void) {
 
     if (vpInXPCProxy || getpid() == 1 || vpInjectionDisabled(*_NSGetEnviron()))
         return;
+    if (vpPathHasSuffix(path, "/MobileSafari.app/MobileSafari") &&
+        access("/usr/lib/vphone-ios18-safari-software", F_OK) == 0)
+        vpUseIOS18SafariSoftwareRendering();
     const char *name = strrchr(path, '/');
     name = name ? name + 1 : path;
     if (strcmp(name, "vphoned") == 0 || strcmp(name, "logd") == 0 ||
@@ -284,6 +302,12 @@ __attribute__((constructor)) static void vpLogProcess(void) {
     }
     if (vpIsLocationd(path)) {
         vpLoadLibrary("hinge-hook", VP_HINGE_HOOK);
+        return;
+    }
+    // libcamfix installs its hooks only when AVFCapture loads, so it is
+    // loaded without the AVFoundation check that keeps it out of other apps.
+    if (vpIsWebKitGPUProcess(path)) {
+        vpLoadLibrary("camera-hook", VP_CAMERA_APP_HOOK);
         return;
     }
     // SpringBoard needs the haptics swizzle before UIKit first asks for an

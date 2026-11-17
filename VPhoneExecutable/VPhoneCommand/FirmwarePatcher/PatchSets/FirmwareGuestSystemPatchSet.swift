@@ -47,6 +47,10 @@ public enum FirmwareGuestSystemPatchSet {
     public static let glesUpperLeftMarker = "/usr/lib/vphone-gles-upper-left"
     public static let ios18GPUTransport = "system-systemhook-cfw-ios18_gpu_transport"
     public static let ios18GPUTransportMarker = "/usr/lib/vphone-ios18-gpu"
+    public static let ios18SafariSoftwareRendering = "system-systemhook-cfw-ios18_safari_software_rendering"
+    public static let ios18SafariSoftwareRenderingMarker = "/usr/lib/vphone-ios18-safari-software"
+    public static let ios17Wallpaper = "system-wallpaper-cfw-ios17_image_assets"
+    public static let ios17WallpaperPath = "/Library/Wallpaper/Collections/iOS_17~iphone.wallpaperCollection/Wallpapers"
     public static let metalVertexIDFormat = "dyld-cfw-metal_vertex_id_format"
     public static let glesPrimitiveRestart = "dyld-cfw-gles_primitive_restart"
     public static let glesPointDraw = "dyld-cfw-gles_point_draw"
@@ -106,6 +110,54 @@ public enum FirmwareGuestSystemPatchSet {
             "System/Library/PrivateFrameworks/GPUToolsDiagnostics.framework"
         ),
     ]
+
+    /// In-process accessibility plug-ins with standalone X1 images in 27.1.
+    /// HomePop keeps its existing declaration above. A cache-only or ordinary
+    /// arm64e image needs no write; inspect the installed bytes as for debug libraries.
+    public static let arm64eX1AccessibilityImages: [(identifier: String, path: String, bundle: String?)] = [
+        ("system-accessibilitysettingspopaccessibility-cfw-arm64e_x1", "AccessibilitySettingsPopAccessibility"),
+        ("system-accessibilityuiservicepopaccessibility-cfw-arm64e_x1", "AccessibilityUIServicePopAccessibility"),
+        ("system-accessibilityutilitiespopaccessibility-cfw-arm64e_x1", "AccessibilityUtilitiesPopAccessibility"),
+        ("system-activityachievementsui-cfw-arm64e_x1", "ActivityAchievementsUI"),
+        ("system-activitybridgesetup-cfw-arm64e_x1", "ActivityBridgeSetup"),
+        ("system-activityringsui-cfw-arm64e_x1", "ActivityRingsUI"),
+        ("system-activitysharing-cfw-arm64e_x1", "ActivitySharing"),
+        ("system-activitysharingui-cfw-arm64e_x1", "ActivitySharingUI"),
+        ("system-ambientsettingspopaccessibility-cfw-arm64e_x1", "AmbientSettingsPopAccessibility"),
+        ("system-assistivetouchpopaccessibility-cfw-arm64e_x1", "AssistiveTouchPopAccessibility"),
+        ("system-clarityboardpopaccessibility-cfw-arm64e_x1", "ClarityBoardPopAccessibility"),
+        ("system-fitnessapp-cfw-arm64e_x1", "FitnessApp"),
+        ("system-fitnessui-cfw-arm64e_x1", "FitnessUI"),
+        ("system-gaxspringboardserverpopaccessibility-cfw-arm64e_x1", "GAXSpringboardServerPopAccessibility"),
+        ("system-gaxuiserverpopaccessibility-cfw-arm64e_x1", "GAXUIServerPopAccessibility"),
+        ("system-livespeechuiservicepopaccessibility-cfw-arm64e_x1", "LiveSpeechUIServicePopAccessibility"),
+        ("system-magnifierangelpopaccessibility-cfw-arm64e_x1", "MagnifierAngelPopAccessibility"),
+        ("system-ntkcustomization-cfw-arm64e_x1", "NTKCustomization"),
+        ("system-ntkpride2026facebundle-cfw-arm64e_x1", "NTKPride2026FaceBundle"),
+        ("system-ntkultracubefacebundlecompanion-cfw-arm64e_x1", "NTKUltraCubeFaceBundleCompanion"),
+        ("system-nanomailbridgesettings-cfw-arm64e_x1", "NanoMailBridgeSettings"),
+        ("system-nanomediabridgeui-cfw-arm64e_x1", "NanoMediaBridgeUI"),
+        ("system-nanopeoplebridgesettings-cfw-arm64e_x1", "NanoPeopleBridgeSettings"),
+        ("system-nanotimekitcompanion-cfw-arm64e_x1", "NanoTimeKitCompanion"),
+        ("system-schooltimesettingsui-cfw-arm64e_x1", "SchoolTimeSettingsUI"),
+        ("system-speechrecognitioncommandandcontrolpopaccessibility-cfw-arm64e_x1", "SpeechRecognitionCommandAndControlPopAccessibility"),
+        ("system-springboardpopaccessibility-cfw-arm64e_x1", "SpringBoardPopAccessibility"),
+        ("system-springboardpopframework-cfw-arm64e_x1", "SpringBoardPopFramework"),
+        ("system-swiftuipopaccessibility-cfw-arm64e_x1", "SwiftUIPopAccessibility"),
+        ("system-systemstatusuipopaccessibility-cfw-arm64e_x1", "SystemStatusUIPopAccessibility"),
+        ("system-uikitpopaccessibility-cfw-arm64e_x1", "UIKitPopAccessibility"),
+        ("system-votaxuiservicepopaccessibility-cfw-arm64e_x1", "VOTAXUIServicePopAccessibility"),
+        ("system-voiceovertouchpopaccessibility-cfw-arm64e_x1", "VoiceOverTouchPopAccessibility"),
+        ("system-activity_widget-cfw-arm64e_x1", "activity-widget"),
+        ("system-com_apple_nanotimekit_createwatchface-cfw-arm64e_x1", "com.apple.NanoTimeKit.CreateWatchFace"),
+    ].map { image in
+        let bundle = "System/Library/AccessibilityBundles/" + image.1 + ".axbundle"
+        return (identifier: image.0, path: bundle + "/" + image.1, bundle: bundle)
+    }
+
+    /// Shared by installation and CLI lookup so declared optional images cannot
+    /// accidentally keep using the non-strict bootstrap conversion path.
+    public static let arm64eX1OptionalImages = arm64eX1DebugImages + arm64eX1AccessibilityImages
 
     public static let paravirtGPUIndexOffset = "system-paravirt_gpu-cfw-heap_index_offset"
     public static let paravirtGPUPrimitiveRestart = "system-paravirt_gpu-cfw-primitive_restart"
@@ -724,7 +776,7 @@ public enum FirmwareGuestSystemPatchSet {
                 title: "Pairing from guest apps",
                 summary: "Allows apps inside the guest to connect to its pairing control channel and tunnels.",
                 target: .guestExecutable(path: "/usr/libexec/remotepairingdeviced"),
-                applicability: ios27,
+                applicability: VPhonePatchApplicability(iOSBase: .oneOf([.major(17), .major(18), .major(26), .major(27)])),
             ),
             VPhonePatchDeclaration(
                 identifier: "system-launchd_cache_loader-boot-unsecure_cache_gate",
@@ -793,16 +845,34 @@ public enum FirmwareGuestSystemPatchSet {
                 ),
             ),
             VPhonePatchDeclaration(
+                identifier: ios17Wallpaper,
+                title: "iOS 17 stock wallpaper assets",
+                summary: "Transcodes the stock layered wallpaper's HEIC images to PNG using the host decoder so iOS 17 can render its original wallpaper.",
+                target: .guestFile(path: ios17WallpaperPath),
+                applicability: VPhonePatchApplicability(
+                    iOSBase: .release(major: 17, minor: 7), cloudOS: .release(major: 26, minor: 1),
+                ),
+            ),
+            VPhonePatchDeclaration(
                 identifier: ios18GPUTransport,
-                title: "iOS 18 GPU transport",
+                title: "Legacy iOS GPU transport",
                 summary: """
-                Gives an iOS 18 guest on a cloudOS 26.1 kernel a Metal device. `fw prepare` stages \
-                the paravirtual GPU driver of the iOS release's own cloudOS, and SystemHook \
-                translates the IOGPU and driver calls the 26.1 kernel renumbered or widened. \
-                Without it the guest has no GPU and draws its UI in software. Restart after changing; \
-                switching it on or off also needs a new `fw prepare` for the matching driver.
+                Gives iOS 18.6 guests and iOS 17.7 guests on iPhone SE 3 and iPhone 15 a Metal device with cloudOS 26.1. \
+                Firmware preparation stages the cloudOS 18.6 paravirtual GPU driver. SystemHook \
+                translates the IOGPU calls and the iOS 17 completion records. Switching it on or off \
+                requires preparing the matching driver again before CFW installation.
                 """,
                 target: .guestFile(path: ios18GPUTransportMarker),
+                applicability: VPhonePatchApplicability(
+                    iOSBase: .oneOf([.release(major: 17, minor: 7), .release(major: 18, minor: 6)]),
+                    cloudOS: .release(major: 26, minor: 1),
+                ),
+            ),
+            VPhonePatchDeclaration(
+                identifier: ios18SafariSoftwareRendering,
+                title: "iOS 18 Safari software rendering",
+                summary: "Uses software backing stores and 2D Canvas in MobileSafari on iOS 18.6 with cloudOS 26.1 to prevent blank web content.",
+                target: .guestFile(path: ios18SafariSoftwareRenderingMarker),
                 applicability: VPhonePatchApplicability(
                     iOSBase: .release(major: 18, minor: 6),
                     cloudOS: .release(major: 26, minor: 1),
@@ -1258,6 +1328,13 @@ public enum FirmwareGuestSystemPatchSet {
                 identifier: image.identifier,
                 title: "\((image.path as NSString).lastPathComponent) X1 compatibility",
                 summary: "Lowers unsupported X1 instructions in this standalone debug library before a debugger can intercept their faults. Missing images and images needing no conversion keep their original bytes and signature.",
+                target: .guestFile(path: "/" + image.path),
+            )
+        } + arm64eX1AccessibilityImages.map { image in
+            VPhonePatchDeclaration(
+                identifier: image.identifier,
+                title: "\((image.path as NSString).lastPathComponent) X1 compatibility",
+                summary: "Lowers unsupported X1 instructions in this standalone accessibility plug-in before UIKit loads it into an app. Missing images and images needing no conversion keep their original bytes and signature.",
                 target: .guestFile(path: "/" + image.path),
             )
         },
