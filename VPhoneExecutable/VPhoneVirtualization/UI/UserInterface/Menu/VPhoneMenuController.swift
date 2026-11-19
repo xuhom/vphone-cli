@@ -60,6 +60,7 @@ class VPhoneMenuController {
     /// Saves the developer tunnel setting to this machine's config.plist.
     var onDeveloperTunnelChange: ((Bool) throws -> Void)?
     var developerTunnelItem: NSMenuItem?
+    let socks5Menu: VPhoneSOCKS5Menu
     /// Nil in DFU and when the guest's UDID is unknown, which leaves the
     /// item disabled.
     var developerTunnel: VPhoneDeveloperTunnel? {
@@ -167,9 +168,10 @@ class VPhoneMenuController {
     var powerSourceRetainedPtr: UnsafeMutableRawPointer?
     var lowPowerObserver: (any NSObjectProtocol)?
 
-    init(keySender: VPhoneVirtualMachineKeySender, control: VPhoneGuestControl) {
+    init(keySender: VPhoneVirtualMachineKeySender, control: VPhoneGuestControl, machine: URL) {
         self.keySender = keySender
         self.control = control
+        socks5Menu = VPhoneSOCKS5Menu(machine: machine)
         guestToolsWindowController = VPhoneGuestToolsWindowController(control: control)
         guestPanelsWindowController = VPhoneGuestPanelsWindowController(control: control)
         setupMenuBar()

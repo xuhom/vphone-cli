@@ -259,7 +259,9 @@ class VPhoneVirtualMachineAppDelegate: NSObject, NSApplicationDelegate {
                 fileWC.showWindow(control: control, path: path)
             }
 
-            let mc = VPhoneMenuController(keySender: keySender, control: control)
+            let mc = VPhoneMenuController(
+                keySender: keySender, control: control, machine: options.configURL.deletingLastPathComponent(),
+            )
             mc.onRemoteToggle = { [weak self] in
                 guard let self else { return false }
                 return try await self.toggleLANRemote()
