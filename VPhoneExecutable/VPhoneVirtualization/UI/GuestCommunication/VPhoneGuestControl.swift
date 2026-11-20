@@ -281,7 +281,7 @@ final class VPhoneGuestControl {
                 interfaceOrientation = orientation
             }
             do {
-                _ = try await call("display.rotation", params: ["orientation": String(orientation.rawValue)])
+                _ = try await callGuest("display.rotation", params: ["orientation": String(orientation.rawValue)])
                 watch?.cancel()
                 if isLatest() { interfaceOrientation = orientation }
                 return
@@ -914,8 +914,13 @@ final class VPhoneGuestControl {
             pendingRotations += 1
         }
         defer { if rotates { pendingRotations -= 1 } }
+        return try await callGuest(method, params: params)
+    }
+
+    /// Sends the request after the caller has reserved any display transition.
+    private func callGuest(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         var requestParams = params
-        if rotates, duoStartupDisplay == .outer {
+        if method == "display.rotation", params["orientation"] != nil, duoStartupDisplay == .outer {
             requestParams["use_display_tool"] = true
         }
         do {

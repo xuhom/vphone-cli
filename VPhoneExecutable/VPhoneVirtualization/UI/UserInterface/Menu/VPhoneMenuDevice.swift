@@ -403,7 +403,12 @@ extension VPhoneMenuController {
                     control.interfaceOrientation = VPhoneDisplayOrientation(degrees: degrees)
                 }
             }
-            if let device = control.deviceOrientation {
+            // The iPad's saved gravity pose can differ from the displayed
+            // orientation after startup or an app transition. Turn from the
+            // visible canvas so a quarter-turn from portrait reaches landscape.
+            if captureView?.isPadGuest == true, let current = control.interfaceOrientation {
+                try? await control.rotate(toFirstOf: [current.turned(clockwise: clockwise)])
+            } else if let device = control.deviceOrientation {
                 try? await control.rotate(toFirstOf: [device.turned(clockwise: clockwise)])
             } else if let current = control.interfaceOrientation {
                 let next = current.turned(clockwise: clockwise)
